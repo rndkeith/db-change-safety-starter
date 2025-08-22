@@ -1,0 +1,113 @@
+name: DB Migration CI
+
+on:
+  pull_request:
+    paths: 
+      - "migrations/**"
+      - "policy/**"
+      - "tools/**"
+      - ".github/**"
+      - "flyway/**"
+
+jobs:
+  validate-and-smoke:
+    runs-on: ubuntu-latest
+    
+    services:
+      sql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          SA_PASSWORD: "Your_strong_password123"
+        ports:
+          - "1433:1433"
+        options: >-
+          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P Your_strong_password123 -Q 'select 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install yq
+        run: |
+          sudo snap install yq --channel=v4/stable --classic
+
+      - name: Validate migration policy
+        run: |
+          chmod +x ./tools/policy-validate/policy-validate.sh
+          ./tools/policy-validate/policy-validate.sh
+
+      - name: Run Flyway migrate (dry run)
+        uses: docker://flyway/flyway:10
+        with:
+          args: >-
+            -url=jdbc:sqlserver://sql:1433;databaseName=tempdb;trustServerCertificate=true
+            -user=sa
+            -password=Your_strong_password123
+            -locations=filesystem:/github/workspace/migrations
+            -dryRunOutput=/github/workspace/dryrun.sql
+            migrate
+            -dryRunOutput
+
+      - name: Run Flyway migrate (actual)
+        uses: docker://flyway/flyway:10
+        with:
+          args: >-
+            -url=jdbc:sqlserver://sql:1433;databaseName=tempdb;trustServerCertificate=true
+            -user=sa
+            -password=Your_strong_password123
+            -locations=filesystem:/github/workspace/migrations
+            migrate
+
+      - name: Build smoke tests
+        run: |
+          dotnet build tools/smoke-test/SmokeTests.csproj -c Release
+
+      - name: Run smoke tests
+        env:
+          SMOKE_CONN: "Server=localhost,1433;Initial Catalog=tempdb;User Id=sa;Password=Your_strong_password123;TrustServerCertificate=True"
+        run: |
+          dotnet run --project tools/smoke-test/SmokeTests.csproj --no-build -c Release
+
+      - name: Upload dry run output
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flyway-dryrun-output
+          path: dryrun.sql
+          retention-days: 7
+
+      - name: Comment PR with dry run results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (fs.existsSync('dryrun.sql')) {
+              const dryRunContent = fs.readFileSync('dryrun.sql', 'utf8');
+              const body = `## 🔍 Flyway Dry Run Results
+              
+              <details>
+              <summary>Click to see generated SQL</summary>
+              
+              \`\`\`sql
+              ${dryRunContent.slice(0, 10000)}${dryRunContent.length > 10000 ? '\n... (truncated)' : ''}
+              \`\`\`
+              
+              </details>`;
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }

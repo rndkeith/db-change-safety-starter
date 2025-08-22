@@ -1,0 +1,68 @@
+name: Promote Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  build-release-artifacts:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for release notes generation
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install release notes dependencies
+        run: |
+          cd tools/release-notes
+          npm install
+
+      - name: Generate release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          RELEASE_NOTES_CONN: ${{ secrets.RELEASE_NOTES_DB_CONN }}
+        run: |
+          cd tools/release-notes
+          npm run gen
+
+      - name: Create migration artifact
+        run: |
+          mkdir -p release-artifacts
+          cp -r migrations release-artifacts/
+          cp -r flyway release-artifacts/
+          cp -r policy release-artifacts/
+          tar -czf release-artifacts/db-migrations-${{ github.sha }}.tar.gz -C release-artifacts .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-package-${{ github.sha }}
+          path: release-artifacts/
+          retention-days: 90
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Database Migration ${{ github.ref_name }}
+          body_path: tools/release-notes/REL_${{ github.run_id }}.md
+          draft: false
+          prerelease: false
+
+      - name: Notify deployment ready
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "Migration package built and ready for deployment"
+          echo "Artifact: migration-package-${{ github.sha }}"
+          echo "SHA: ${{ github.sha }}"

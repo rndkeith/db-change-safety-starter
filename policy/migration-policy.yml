@@ -1,0 +1,126 @@
+naming:
+  versioned_prefix: "V"
+  repeatable_prefix: "R__"
+  filename_pattern: "V[0-9]{3}__.*\\.sql"
+
+allowed_operations:
+  - add_table
+  - add_column_nullable
+  - add_index
+  - widen_column
+  - add_default_constraint
+  - add_foreign_key
+  - add_check_constraint
+  - create_view
+  - create_stored_procedure
+  - create_function
+  - insert_reference_data
+
+restricted_operations:
+  - alter_column_type_narrowing
+  - drop_column
+  - drop_table
+  - make_column_not_null_without_default
+  - rename_column_without_synonym
+  - breaking_view_change
+  - truncate_table
+  - delete_without_where_clause
+
+rules:
+  require_metadata_header: true
+  require_ticket_ref: true
+  require_backward_compatibility: true
+  forbid_patterns:
+    - "\\bDROP\\s+TABLE\\b"
+    - "\\bDROP\\s+COLUMN\\b"
+    - "\\bALTER\\s+COLUMN\\b.*NOT\\s+NULL\\b(?!.*DEFAULT)"
+    - "\\bTRUNCATE\\s+TABLE\\b"
+    - "\\bDELETE\\s+FROM\\s+\\w+\\s*;\\s*$"
+    - "\\bDELETE\\s+\\w+\\s*;\\s*$"
+  max_statement_time_seconds: 60
+  require_transaction_isolation: false
+  require_online_operations: true
+
+metadata_requirements:
+  required_fields:
+    - change_id
+    - title
+    - ticket
+    - risk
+    - change_type
+    - backward_compatible
+    - owner
+    - rollout_plan
+    - rollback_plan
+  optional_fields:
+    - requires_backfill
+    - reviewers
+    - estimated_duration
+    - table_size_impact
+  risk_levels:
+    - low
+    - medium
+    - high
+  change_types:
+    - additive
+    - modification
+    - deprecation
+    - removal
+
+deprecation:
+  require_two_stage: true
+  min_deprecation_window_days: 14
+  require_deprecation_notice: true
+  
+repeatables:
+  must_be_idempotent: true
+  forbid_drop_create_without_if_exists: true
+  allow_view_recreation: true
+  allow_procedure_recreation: true
+
+reviews:
+  min_approvals: 1
+  required_approver_roles:
+    - "DBA"
+    - "Staff Engineer"
+  high_risk_additional_approvals: 2
+  require_dba_for_schema_changes: true
+
+performance:
+  max_table_lock_time_seconds: 30
+  require_online_index_creation: true
+  warn_on_full_table_scan: true
+  require_execution_plan_review: false
+
+safety_checks:
+  validate_referential_integrity: true
+  check_constraint_violations: true
+  validate_data_types: true
+  require_rollback_testing: false
+
+environment_restrictions:
+  production:
+    forbid_data_modification: true
+    require_maintenance_window: false
+    max_concurrent_migrations: 1
+  staging:
+    allow_destructive_operations: false
+    require_approval: true
+  development:
+    allow_destructive_operations: true
+    require_approval: false
+
+telemetry:
+  annotate_flyway_table: true
+  log_execution_metrics: true
+  alert_on_long_running_migrations: true
+  
+notification:
+  slack_webhook: null
+  email_notifications: []
+  teams_webhook: null
+
+compliance:
+  require_change_control_ticket: true
+  audit_trail_required: true
+  retain_migration_logs_days: 90

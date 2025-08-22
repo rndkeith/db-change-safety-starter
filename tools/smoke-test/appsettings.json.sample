@@ -1,0 +1,32 @@
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost,1433;Initial Catalog=DevDB;User Id=sa;Password=DevPassword123!;TrustServerCertificate=True"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft": "Warning",
+      "System": "Warning"
+    }
+  },
+  "SmokeTestSettings": {
+    "TimeoutSeconds": 30,
+    "RetryAttempts": 3,
+    "RequiredTables": [
+      "Users",
+      "Products", 
+      "Orders",
+      "OrderItems",
+      "AppConfig",
+      "HealthProbe"
+    ],
+    "RequiredViews": [
+      "vw_OrderSummary",
+      "vw_ProductCatalog",
+      "vw_SystemHealth"
+    ],
+    "RequiredStoredProcedures": [
+      "sp_UpdateOrderStatus"
+    ]
+  }
+}

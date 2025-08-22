@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  # SQL Server database for development and testing
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: db-dev-sqlserver
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=DevPassword123!
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P DevPassword123! -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - db-dev-network
+
+  # Flyway for migrations (can be used for testing)
+  flyway:
+    image: flyway/flyway:10-alpine
+    container_name: db-dev-flyway
+    command: info
+    volumes:
+      - ../migrations:/flyway/sql
+      - ../flyway:/flyway/conf
+    environment:
+      - FLYWAY_URL=jdbc:sqlserver://sqlserver:1433;databaseName=DevDB;trustServerCertificate=true
+      - FLYWAY_USER=sa
+      - FLYWAY_PASSWORD=DevPassword123!
+      - FLYWAY_LOCATIONS=filesystem:/flyway/sql
+      - FLYWAY_BASELINE_ON_MIGRATE=true
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    networks:
+      - db-dev-network
+    profiles:
+      - migration
+
+  # Azure Data Studio (optional - for GUI database management)
+  azuredatastudio:
+    image: mcr.microsoft.com/azuredatastudio:latest
+    container_name: db-dev-azuredatastudio
+    ports:
+      - "8080:8080"
+    environment:
+      - DISPLAY=:0
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    depends_on:
+      - sqlserver
+    networks:
+      - db-dev-network
+    profiles:
+      - gui
+
+  # Redis (optional - for caching layer testing)
+  redis:
+    image: redis:7-alpine
+    container_name: db-dev-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - db-dev-network
+    profiles:
+      - cache
+
+  # Database monitoring with Grafana and Prometheus (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: db-dev-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    networks:
+      - db-dev-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: db-dev-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - db-dev-network
+    profiles:
+      - monitoring
+
+volumes:
+  sqlserver_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  db-dev-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Docker Compose Profiles Usage:
+# 
+# Basic development (SQL Server only):
+#   docker compose up -d
+#
+# Include Flyway for migrations:
+#   docker compose --profile migration up -d
+#
+# Include Redis for caching tests:
+#   docker compose --profile cache up -d
+#
+# Include monitoring stack:
+#   docker compose --profile monitoring up -d
+#
+# All services:
+#   docker compose --profile migration --profile cache --profile monitoring up -d
+#
+# Useful commands:
+#   docker compose logs sqlserver    # View SQL Server logs
+#   docker compose exec sqlserver bash  # Connect to SQL Server container
+#   docker compose down -v           # Stop and remove volumes (clean reset)

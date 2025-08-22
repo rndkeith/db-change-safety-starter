@@ -1,0 +1,40 @@
+{
+  "name": "db-release-notes-generator",
+  "version": "1.0.0",
+  "description": "Automated release notes generator for database migrations",
+  "type": "module",
+  "main": "generate-release-notes.ts",
+  "scripts": {
+    "gen": "tsx generate-release-notes.ts",
+    "dev": "tsx watch generate-release-notes.ts",
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "database",
+    "migration",
+    "release-notes",
+    "flyway",
+    "sql-server"
+  ],
+  "author": "Database Team",
+  "license": "MIT",
+  "dependencies": {
+    "mssql": "^10.0.1",
+    "handlebars": "^4.7.8",
+    "yaml": "^2.3.4",
+    "globby": "^14.0.0",
+    "commander": "^11.1.0",
+    "dayjs": "^1.11.10"
+  },
+  "devDependencies": {
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.3",
+    "@types/node": "^20.10.5",
+    "@types/mssql": "^9.1.5",
+    "@types/handlebars": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

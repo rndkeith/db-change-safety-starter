@@ -1,0 +1,62 @@
+# Banned SQL Patterns - Quick Regex Guardrails
+# These patterns will cause immediate policy validation failure
+
+# Destructive operations
+DROP\s+TABLE
+DROP\s+COLUMN
+TRUNCATE\s+TABLE
+
+# Dangerous column modifications
+ALTER\s+COLUMN\s+.*NOT\s+NULL(?!.*DEFAULT)
+ALTER\s+COLUMN\s+.*IDENTITY
+
+# Unsafe data operations
+DELETE\s+FROM\s+\w+\s*;\s*$
+DELETE\s+\w+\s*;\s*$
+UPDATE\s+\w+\s+SET\s+.*WHERE\s+1\s*=\s*1
+
+# Performance killers
+SELECT\s+\*\s+FROM\s+\w+\s*;\s*$
+CURSOR\s+FOR
+
+# Security risks
+EXEC\s*\(
+EXECUTE\s*\(
+sp_executesql.*@
+
+# Database structure changes requiring special handling
+RENAME\s+COLUMN
+RENAME\s+TABLE
+ALTER\s+TABLE\s+.*DROP\s+CONSTRAINT
+
+# Transaction control in migrations (should be handled by Flyway)
+BEGIN\s+TRANSACTION
+COMMIT\s+TRANSACTION
+ROLLBACK\s+TRANSACTION
+
+# Dynamic SQL construction (security risk)
+'.*\+.*@
+CONCAT\s*\(.*@
+
+# Bulk operations without proper safeguards
+BULK\s+INSERT
+OPENROWSET
+OPENDATASOURCE
+
+# System modifications
+USE\s+\w+
+CREATE\s+DATABASE
+DROP\s+DATABASE
+ALTER\s+DATABASE
+
+# Privilege escalation
+GRANT\s+.*sysadmin
+GRANT\s+.*serveradmin
+GRANT\s+.*dbcreator
+
+# Comments explaining some patterns:
+# - DROP operations require explicit deprecation process
+# - DELETE without WHERE is usually accidental
+# - Dynamic SQL can lead to injection vulnerabilities
+# - Bulk operations need special performance consideration
+# - System-level changes should go through different process

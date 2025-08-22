@@ -1,0 +1,45 @@
+# .gitignore for db-change-safety-starter
+# Ignore build output
+**/bin/
+**/obj/
+
+# Ignore VS Code settings
+.vscode/
+
+# Ignore user-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore node modules
+node_modules/
+
+# Ignore environment files
+.env
+.env.*
+
+# Ignore Docker artifacts
+*.pid
+*.log
+dev/*.db
+
+# Ignore generated release notes
+/tools/release-notes/*.md
+
+# Ignore database migration artifacts
+flyway/*.conf
+flyway/*.conf.example
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore other temp files
+*.tmp
+*.bak
+*.swp
