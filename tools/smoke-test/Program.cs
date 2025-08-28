@@ -94,7 +94,7 @@ public class Program
         // Test 8: Application configuration is readable
         await TestAppConfiguration(connection);
 
-        _logger.LogInformation("All smoke tests completed successfully");
+        _logger!.LogInformation("All smoke tests completed successfully");
     }
 
     private static async Task TestFlywayHistory(SqlConnection connection)
@@ -104,6 +104,7 @@ public class Program
         const string sql = @"
             SELECT TOP 1 version, description, installed_on, success 
             FROM flyway_schema_history 
+            where version is not null
             ORDER BY installed_rank DESC";
 
         using var command = new SqlCommand(sql, connection);
@@ -124,7 +125,7 @@ public class Program
             throw new InvalidOperationException($"Last migration {version} was not successful");
         }
 
-        _logger.LogInformation("✓ Flyway history OK - Latest: {Version} ({Description})", version, description);
+        _logger!.LogInformation("Flyway history OK - Latest: {Version} ({Description})", version, description);
     }
 
     private static async Task TestCoreTablesExist(SqlConnection connection)
@@ -143,13 +144,13 @@ public class Program
             using var command = new SqlCommand(sql, connection);
             command.Parameters.AddWithValue("@tableName", table);
 
-            var count = (int)await command.ExecuteScalarAsync()!;
+            var count = (int)(await command.ExecuteScalarAsync())!;
             if (count == 0)
             {
                 throw new InvalidOperationException($"Required table 'dbo.{table}' does not exist");
             }
 
-            _logger.LogInformation("✓ Table dbo.{Table} exists", table);
+            _logger!.LogInformation("Table dbo.{Table} exists", table);
         }
     }
 
@@ -167,7 +168,7 @@ public class Program
                 using var command = new SqlCommand(sql, connection);
                 await command.ExecuteScalarAsync();
 
-                _logger.LogInformation("✓ View dbo.{View} is accessible", view);
+                _logger!.LogInformation("View dbo.{View} is accessible", view);
             }
             catch (Exception ex)
             {
@@ -186,15 +187,15 @@ public class Program
             WHERE ROUTINE_SCHEMA = 'dbo' AND ROUTINE_NAME = 'sp_UpdateOrderStatus' AND ROUTINE_TYPE = 'PROCEDURE'";
 
         using var command = new SqlCommand(checkProcSql, connection);
-        var count = (int)await command.ExecuteScalarAsync()!;
+        var count = (int)(await command.ExecuteScalarAsync())!;
 
         if (count == 0)
         {
-            _logger.LogWarning("⚠ Stored procedure sp_UpdateOrderStatus not found (may not be migrated yet)");
+            _logger!.LogWarning("Stored procedure sp_UpdateOrderStatus not found (may not be migrated yet)");
         }
         else
         {
-            _logger.LogInformation("✓ Stored procedure sp_UpdateOrderStatus exists");
+            _logger!.LogInformation("Stored procedure sp_UpdateOrderStatus exists");
         }
     }
 
@@ -211,7 +212,7 @@ public class Program
         using var insertCommand = new SqlCommand(insertSql, connection);
         var newId = await insertCommand.ExecuteScalarAsync();
 
-        _logger.LogInformation("✓ INSERT operation successful - ID: {Id}", newId);
+        _logger!.LogInformation("INSERT operation successful - ID: {Id}", newId);
 
         // Test read operation
         const string readSql = @"
@@ -219,21 +220,21 @@ public class Program
             WHERE probe_type = 'smoke_test'";
 
         using var readCommand = new SqlCommand(readSql, connection);
-        var count = (int)await command.ExecuteScalarAsync()!;
+        var count = (int)(await readCommand.ExecuteScalarAsync())!;
 
         if (count < 1)
         {
             throw new InvalidOperationException("Failed to read inserted health probe record");
         }
 
-        _logger.LogInformation("✓ SELECT operation successful - Found {Count} smoke test records", count);
+        _logger!.LogInformation("SELECT operation successful - Found {Count} smoke test records", count);
 
         // Test that we can read from main tables (should have reference data)
         const string userCountSql = "SELECT COUNT(*) FROM dbo.Users";
         using var userCommand = new SqlCommand(userCountSql, connection);
-        var userCount = (int)await userCommand.ExecuteScalarAsync()!;
+        var userCount = (int)(await userCommand.ExecuteScalarAsync())!;
 
-        _logger.LogInformation("✓ Users table readable - Contains {Count} users", userCount);
+        _logger!.LogInformation("Users table readable - Contains {Count} users", userCount);
     }
 
     private static async Task TestReferentialIntegrity(SqlConnection connection)
@@ -248,14 +249,14 @@ public class Program
             WHERE CONSTRAINT_SCHEMA = 'dbo'";
 
         using var command = new SqlCommand(fkSql, connection);
-        var fkCount = (int)await command.ExecuteScalarAsync()!;
+        var fkCount = (int)(await command.ExecuteScalarAsync())!;
 
         if (fkCount == 0)
         {
             throw new InvalidOperationException("No foreign key constraints found - referential integrity may not be enforced");
         }
 
-        _logger.LogInformation("✓ Referential integrity OK - {Count} foreign key constraints active", fkCount);
+        _logger!.LogInformation("Referential integrity OK - {Count} foreign key constraints active", fkCount);
     }
 
     private static async Task TestIndexesExist(SqlConnection connection)
@@ -272,15 +273,15 @@ public class Program
             AND t.name IN ('Users', 'Products', 'Orders', 'OrderItems')";
 
         using var command = new SqlCommand(indexSql, connection);
-        var indexCount = (int)await command.ExecuteScalarAsync()!;
+        var indexCount = (int)(await command.ExecuteScalarAsync())!;
 
         if (indexCount < 5) // Expect at least primary keys + some indexes
         {
-            _logger.LogWarning("⚠ Low index count ({Count}) - performance may be impacted", indexCount);
+            _logger!.LogWarning("Low index count ({Count}) - performance may be impacted", indexCount);
         }
         else
         {
-            _logger.LogInformation("✓ Indexes OK - {Count} indexes found on core tables", indexCount);
+            _logger!.LogInformation("Indexes OK - {Count} indexes found on core tables", indexCount);
         }
     }
 
@@ -307,12 +308,12 @@ public class Program
             throw new InvalidOperationException("Required configuration 'app_version' not found");
         }
 
-        _logger.LogInformation("✓ App configuration OK - Version: {Version}", 
+        _logger!.LogInformation("App configuration OK - Version: {Version}", 
             configItems.GetValueOrDefault("app_version", "unknown"));
 
         if (configItems.ContainsKey("maintenance_mode") && configItems["maintenance_mode"] == "true")
         {
-            _logger.LogWarning("⚠ Application is in maintenance mode");
+            _logger!.LogWarning("Application is in maintenance mode");
         }
     }
 }

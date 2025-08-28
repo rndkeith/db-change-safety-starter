@@ -22,6 +22,12 @@
     
 .PARAMETER SeedTestData
     If specified, adds additional test data beyond reference data
+
+.PARAMETER CheckLicense
+    If specified, checks for Flyway Teams+ license and shows available features
+
+.PARAMETER DryRun
+    If specified and you have Flyway Teams+ license, shows what SQL would be executed
     
 .EXAMPLE
     .\init-db.ps1
@@ -34,6 +40,14 @@
 .EXAMPLE
     .\init-db.ps1 -SeedTestData
     Initialize with additional test data for development
+
+.EXAMPLE
+    .\init-db.ps1 -CheckLicense
+    Check Flyway license status and show available features
+
+.EXAMPLE
+    .\init-db.ps1 -DryRun
+    Preview migration SQL before executing (requires Flyway Teams+)
 #>
 
 param(
@@ -41,8 +55,10 @@ param(
     [switch]$SkipMigrations,
     [switch]$SkipTests,
     [switch]$SeedTestData,
+    [switch]$CheckLicense,
+    [switch]$DryRun,
     [string]$DatabaseName = "DevDB",
-    [int]$WaitTimeSeconds = 30
+    [int]$WaitTimeSeconds = 180
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,6 +70,144 @@ $Colors = @{
     Success = "Green"
     Warning = "Yellow"
     Error   = "Red"
+}
+
+function Test-FlywayLicense {
+    $licenseKey = $env:FLYWAY_LICENSE_KEY
+    if ($licenseKey) {
+        return $true
+    }
+    
+    # Also check flyway.conf files for license key
+    $confFiles = @("../flyway/flyway.conf", "../flyway/conf.dev.conf")
+    foreach ($confFile in $confFiles) {
+        if (Test-Path $confFile) {
+            $content = Get-Content $confFile -Raw
+            if ($content -match "flyway\.licenseKey\s*=\s*(.+)") {
+                return $true
+            }
+        }
+    }
+    
+    return $false
+}
+
+function Show-FlywayLicenseInfo {
+    $hasLicense = Test-FlywayLicense
+    
+    Write-ColorOutput "=== Flyway License Information ===" "Info"
+    
+    if ($hasLicense) {
+        Write-ColorOutput "Flyway Teams+ license detected" "Success"
+        Write-ColorOutput "Available features:" "Info"
+        Write-ColorOutput "  - All Community features (migrate, info, validate, clean)" "Success"
+        Write-ColorOutput "  - Dry run SQL preview (-DryRun parameter)" "Success"
+        Write-ColorOutput "  - Undo migrations (flyway undo)" "Success"
+        Write-ColorOutput "  - Advanced schema validation" "Success"
+    } else {
+        Write-ColorOutput "Using Flyway Community (free)" "Info"
+        Write-ColorOutput "Available features:" "Info"
+        Write-ColorOutput "  - All migration functionality (migrate, info, validate, clean)" "Success"
+        Write-ColorOutput "  - Policy validation (custom scripts)" "Success"
+        Write-ColorOutput "  - Smoke testing and CI/CD pipeline" "Success"
+        Write-ColorOutput "" "Info"
+        Write-ColorOutput "Want more features?" "Warning"
+        Write-ColorOutput "  - Flyway Teams+: `$360/year per user" "Info"
+        Write-ColorOutput "  - 28-day free trial available" "Info"
+        Write-ColorOutput "  - Visit: https://www.red-gate.com/products/flyway/" "Info"
+        Write-ColorOutput "" "Info"
+        Write-ColorOutput "To enable Teams+ features:" "Info"
+        Write-ColorOutput "  export FLYWAY_LICENSE_KEY='your-license-key'" "Info"
+        Write-ColorOutput "  # Or add to flyway/flyway.conf:" "Info"
+        Write-ColorOutput "  flyway.licenseKey=your-license-key" "Info"
+    }
+    
+    return $hasLicense
+}
+
+function Invoke-FlywayMigrate {
+    param(
+        [string]$DatabaseName,
+        [bool]$DryRun = $false,
+        [object]$HasLicense = $null
+    )
+    
+    # Use provided HasLicense value when supplied to avoid re-checking repeatedly
+    if ($HasLicense -ne $null) {
+        $hasLicense = [bool]$HasLicense
+    } else {
+        $hasLicense = Test-FlywayLicense
+    }
+    
+    Write-ColorOutput "Running database migrations..." "Info"
+    
+    if ($DryRun -and $hasLicense) {
+        Write-ColorOutput "Performing dry run (Teams+ feature)..." "Info"
+        Write-ColorOutput "This will show what SQL would be executed without actually running it." "Info"
+    } elseif ($DryRun -and -not $hasLicense) {
+        Write-ColorOutput "Dry run requires Flyway Teams+ license. Proceeding with normal migration." "Warning"
+        $DryRun = $false
+    }
+
+    # Set environment variables
+    $env:FLYWAY_URL = "jdbc:sqlserver://localhost:1433;databaseName=$DatabaseName;trustServerCertificate=true"
+    $env:FLYWAY_USER = "sa"
+    $env:FLYWAY_PASSWORD = "DevPassword123!"
+    
+    if ($hasLicense -and $env:FLYWAY_LICENSE_KEY) {
+        Write-ColorOutput "Using Flyway Teams+ license" "Success"
+    }
+    
+    # Check if flyway is available locally, otherwise use Docker
+    $useLocal = $false
+    try {
+        flyway -version | Out-Null
+        $useLocal = $true
+        Write-ColorOutput "Using local Flyway installation" "Info"
+    } catch {
+        Write-ColorOutput "Using Dockerized Flyway" "Info"
+    }
+    
+    # Execute migration
+    if ($useLocal) {
+        if ($DryRun) {
+            # Try dry run with output file
+            if (-not $hasLicense) {
+                Write-ColorOutput "Dry run requires Flyway Teams+ license. Proceeding with normal migration." "Warning"
+            } else {
+                $dryRunFile = "migration-dryrun-$(Get-Date -Format 'yyyyMMdd-HHmmss').sql"
+                flyway -configFiles=../flyway/conf.dev.conf -dryRunOutput=$dryRunFile migrate
+
+                if ($LASTEXITCODE -eq 0 -and (Test-Path $dryRunFile)) {
+                    Write-ColorOutput "Dry run completed! Generated SQL saved to: $dryRunFile" "Success"
+                    Write-ColorOutput "First 20 lines of generated SQL:" "Info"
+                    Get-Content $dryRunFile -TotalCount 20 | ForEach-Object { 
+                        Write-ColorOutput "  $_" "Info" 
+                    }
+                    
+                    $proceed = Read-Host "`nProceed with actual migration? (y/N)"
+                    if ($proceed -notmatch "^[Yy]$") {
+                        Write-ColorOutput "Migration cancelled by user." "Warning"
+                        return $false
+                    }
+                }
+            }
+        }
+        
+        # Run actual migration
+        flyway -configFiles=../flyway/conf.dev.conf migrate
+    } else {
+        if ($DryRun) {
+            if (-not $hasLicense) {
+                Write-ColorOutput "Dry run with Docker requires Flyway Teams+ license or manual setup. Proceeding with normal migration." "Warning"
+            } else {
+                Write-ColorOutput "Dry run with Docker requires manual setup. Proceeding with normal migration." "Warning"
+            }
+        }
+        docker compose run --rm flyway migrate
+    }
+    
+    return ($LASTEXITCODE -eq 0)
 }
 
 function Write-ColorOutput {
@@ -133,7 +287,35 @@ function Invoke-SqlCommand {
 }
 
 function Initialize-DevelopmentDatabase {
+    param(
+        [bool]$CheckLicense,
+        [bool]$DryRun,
+        [bool]$Reset,
+        [bool]$SkipMigrations,
+        [bool]$SkipTests,
+        [bool]$SeedTestData,
+        [string]$DatabaseName,
+        [int]$WaitTimeSeconds
+    )
+    
     Write-ColorOutput "=== Initializing Development Database ===" "Info"
+    
+    # Check license first if requested
+    if ($CheckLicense) {
+        Show-FlywayLicenseInfo
+        return
+    }
+    
+    # Show quick license status
+    $hasLicense = Test-FlywayLicense
+    if ($hasLicense) {
+        Write-ColorOutput "Flyway Teams+ license detected - advanced features available" "Success"
+    } else {
+        Write-ColorOutput "Using Flyway Community (free) - all core features available" "Info"
+        if ($DryRun) {
+            Write-ColorOutput "-DryRun parameter requires Flyway Teams+ license" "Warning"
+        }
+    }
     
     # Check Docker
     if (-not (Test-DockerRunning)) {
@@ -161,19 +343,44 @@ function Initialize-DevelopmentDatabase {
     $timeout = (Get-Date).AddSeconds($WaitTimeSeconds)
     
     do {
-        $healthStatus = docker compose ps sqlserver --format json | ConvertFrom-Json | Select-Object -ExpandProperty Health
+        # Check health status first
+        $healthStatus = docker inspect db-dev-sqlserver --format "{{.State.Health.Status}}" 2>$null
+        
         if ($healthStatus -eq "healthy") {
-            Write-ColorOutput "SQL Server is healthy and ready" "Success"
+            Write-ColorOutput "SQL Server health check passed" "Success"
             break
+        }
+        
+        # If health status is not available or failing, check if we can connect
+        try {
+            $testConn = New-Object System.Data.SqlClient.SqlConnection("Server=localhost,1433;Initial Catalog=master;User Id=sa;Password=DevPassword123!;TrustServerCertificate=True;Connection Timeout=5")
+            $testConn.Open()
+            $testConn.Close()
+            Write-ColorOutput "SQL Server is responding to connections" "Success"
+            break
+        }
+        catch {
+            # Connection failed, continue waiting
+            if ($Verbose) {
+                Write-ColorOutput "Connection test failed: $($_.Exception.Message)" "Info"
+            }
         }
         
         if ((Get-Date) -gt $timeout) {
             Write-ColorOutput "Timeout waiting for SQL Server to be ready" "Error"
-            docker compose logs sqlserver
+            Write-ColorOutput "Checking container status and logs..." "Info"
+            
+            docker compose logs --tail 20 sqlserver
+            
+            Write-ColorOutput "Container health status: $(docker inspect db-dev-sqlserver --format '{{.State.Health.Status}}' 2>/dev/null)" "Info"
+            Write-ColorOutput "Container status: $(docker inspect db-dev-sqlserver --format '{{.State.Status}}' 2>/dev/null)" "Info"
+            
+            Write-ColorOutput "Try running: .\diagnose-sqlserver.ps1 for detailed troubleshooting" "Warning"
             exit 1
         }
         
-        Start-Sleep -Seconds 2
+        Write-ColorOutput "Still waiting for SQL Server... (Health: $healthStatus)" "Info"
+        Start-Sleep -Seconds 5
     } while ($true)
     
     # Create development database
@@ -204,24 +411,9 @@ END
     
     # Run migrations
     if (-not $SkipMigrations) {
-        Write-ColorOutput "Running database migrations..." "Info"
+    $migrationSuccess = Invoke-FlywayMigrate -DatabaseName $DatabaseName -DryRun $DryRun -HasLicense $hasLicense
         
-        $env:FLYWAY_URL = "jdbc:sqlserver://localhost:1433;databaseName=$DatabaseName;trustServerCertificate=true"
-        $env:FLYWAY_USER = "sa"
-        $env:FLYWAY_PASSWORD = "DevPassword123!"
-        
-        # Check if flyway is available locally, otherwise use Docker
-        try {
-            flyway -version | Out-Null
-            Write-ColorOutput "Using local Flyway installation" "Info"
-            flyway -configFiles=../flyway/conf.dev.conf migrate
-        }
-        catch {
-            Write-ColorOutput "Using Dockerized Flyway" "Info"
-            docker compose run --rm flyway migrate
-        }
-        
-        if ($LASTEXITCODE -ne 0) {
+        if (-not $migrationSuccess) {
             Write-ColorOutput "Migration failed" "Error"
             exit 1
         }
@@ -254,10 +446,13 @@ DECLARE @user2_id BIGINT = (SELECT id FROM dbo.Users WHERE email = 'bob@example.
 DECLARE @product1_id BIGINT = (SELECT id FROM dbo.Products WHERE sku = 'TEST-WIDGET-A');
 DECLARE @product2_id BIGINT = (SELECT id FROM dbo.Products WHERE sku = 'TEST-WIDGET-B');
 
-INSERT INTO dbo.Orders (user_id, order_number, total_amount, created_at, updated_at, status)
+DECLARE @pending_status_id INT = (SELECT Id FROM dbo.Statuses WHERE Code = 'pending');
+DECLARE @processing_status_id INT = (SELECT Id FROM dbo.Statuses WHERE Code = 'processing');
+
+INSERT INTO dbo.Orders (user_id, order_number, total_amount, created_at, updated_at, StatusId)
 VALUES 
-(@user1_id, 'TEST-ORDER-001', 41.98, SYSUTCDATETIME(), SYSUTCDATETIME(), 'pending'),
-(@user2_id, 'TEST-ORDER-002', 25.99, SYSUTCDATETIME(), SYSUTCDATETIME(), 'processing');
+(@user1_id, 'TEST-ORDER-001', 41.98, SYSUTCDATETIME(), SYSUTCDATETIME(), @pending_status_id),
+(@user2_id, 'TEST-ORDER-002', 25.99, SYSUTCDATETIME(), SYSUTCDATETIME(), @processing_status_id);
 
 -- Insert order items
 DECLARE @order1_id BIGINT = (SELECT id FROM dbo.Orders WHERE order_number = 'TEST-ORDER-001');
@@ -314,11 +509,27 @@ PRINT 'Test data seeded successfully';
     Write-ColorOutput "Connection String:" "Info"
     Write-ColorOutput $devConnectionString "Info"
     Write-ColorOutput "" "Info"
-    Write-ColorOutput "To stop the environment:" "Info"
-    Write-ColorOutput "  docker compose down" "Info"
+    
+    # Show license-specific information
+    $hasLicense = Test-FlywayLicense
+    if ($hasLicense) {
+        Write-ColorOutput "Flyway Teams+ Features Available:" "Success"
+        Write-ColorOutput "  .\init-db.ps1 -DryRun          # Preview migration SQL" "Info"
+        Write-ColorOutput "  flyway undo                     # Rollback last migration" "Info"
+        Write-ColorOutput "  flyway info -detail             # Detailed migration info" "Info"
+    } else {
+        Write-ColorOutput "Flyway Community (Free) Features:" "Success"
+        Write-ColorOutput "  .\init-db.ps1 -CheckLicense     # See all available features" "Info"
+        Write-ColorOutput "  flyway info                     # Migration status" "Info"
+        Write-ColorOutput "  flyway validate                 # Validate migrations" "Info"
+    }
+    
     Write-ColorOutput "" "Info"
-    Write-ColorOutput "To reset the environment:" "Info"
-    Write-ColorOutput "  .\init-db.ps1 -Reset" "Info"
+    Write-ColorOutput "Useful Commands:" "Info"
+    Write-ColorOutput "  .\init-db.ps1 -Reset            # Complete environment reset" "Info"
+    Write-ColorOutput "  .\init-db.ps1 -SeedTestData     # Add extra test data" "Info"
+    Write-ColorOutput "  .\cleanup.ps1                   # Stop all services" "Info"
+    Write-ColorOutput "  .\status.ps1                    # Check environment status" "Info"
     Write-ColorOutput "" "Info"
     
     if ($SeedTestData) {
@@ -331,7 +542,7 @@ PRINT 'Test data seeded successfully';
 
 # Main execution
 try {
-    Initialize-DevelopmentDatabase
+    Initialize-DevelopmentDatabase -CheckLicense $CheckLicense.IsPresent -DryRun $DryRun.IsPresent -Reset $Reset.IsPresent -SkipMigrations $SkipMigrations.IsPresent -SkipTests $SkipTests.IsPresent -SeedTestData $SeedTestData.IsPresent -DatabaseName $DatabaseName -WaitTimeSeconds $WaitTimeSeconds
     Write-ColorOutput "Development database initialization completed successfully!" "Success"
     exit 0
 }

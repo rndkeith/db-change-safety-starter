@@ -45,7 +45,8 @@ jobs:
           chmod +x ./tools/policy-validate/policy-validate.sh
           ./tools/policy-validate/policy-validate.sh
 
-      - name: Run Flyway migrate (dry run)
+      - name: Run Flyway migrate (dry run preview)
+        if: env.FLYWAY_LICENSE_KEY
         uses: docker://flyway/flyway:10
         with:
           args: >-
@@ -56,6 +57,7 @@ jobs:
             -dryRunOutput=/github/workspace/dryrun.sql
             migrate
             -dryRunOutput
+        continue-on-error: true
 
       - name: Run Flyway migrate (actual)
         uses: docker://flyway/flyway:10
@@ -78,22 +80,22 @@ jobs:
           dotnet run --project tools/smoke-test/SmokeTests.csproj --no-build -c Release
 
       - name: Upload dry run output
+        if: env.FLYWAY_LICENSE_KEY && always()
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: flyway-dryrun-output
           path: dryrun.sql
           retention-days: 7
 
       - name: Comment PR with dry run results
-        if: github.event_name == 'pull_request'
+        if: env.FLYWAY_LICENSE_KEY && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             if (fs.existsSync('dryrun.sql')) {
               const dryRunContent = fs.readFileSync('dryrun.sql', 'utf8');
-              const body = `## 🔍 Flyway Dry Run Results
+              const body = `## 🔍 Flyway Dry Run Results (Teams+ Feature)
               
               <details>
               <summary>Click to see generated SQL</summary>
@@ -109,5 +111,12 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 body: body
+              });
+            } else {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '## ℹ️ Flyway Dry Run\n\nDry run preview requires Flyway Teams+ license. Set `FLYWAY_LICENSE_KEY` secret to enable this feature.'
               });
             }

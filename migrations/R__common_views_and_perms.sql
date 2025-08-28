@@ -1,3 +1,4 @@
+
 -- Repeatable migration for common views and permissions
 -- This file is executed whenever it changes, so all operations must be idempotent
 
@@ -12,7 +13,7 @@ SELECT
     o.id,
     o.order_number,
     o.total_amount,
-    o.status,
+    s.Code AS orderStatus,
     o.created_at,
     u.email as customer_email,
     u.first_name + ' ' + u.last_name as customer_name,
@@ -20,8 +21,8 @@ SELECT
 FROM dbo.Orders o
 INNER JOIN dbo.Users u ON o.user_id = u.id
 LEFT JOIN dbo.OrderItems oi ON o.id = oi.order_id
-WHERE o.is_active = 1 OR o.is_active IS NULL  -- Handle potential nullable field
-GROUP BY o.id, o.order_number, o.total_amount, o.status, o.created_at, 
+LEFT JOIN dbo.Statuses s ON o.StatusId = s.Id
+GROUP BY o.id, o.order_number, o.total_amount, s.Code, o.created_at, 
          u.email, u.first_name, u.last_name;
 GO
 
@@ -49,7 +50,8 @@ LEFT JOIN (
         SUM(oi.total_price) as revenue
     FROM dbo.OrderItems oi
     INNER JOIN dbo.Orders o ON oi.order_id = o.id
-    WHERE o.status NOT IN ('cancelled', 'refunded')
+    LEFT JOIN dbo.Statuses s ON o.StatusId = s.Id
+    WHERE s.Code NOT IN ('cancelled', 'refunded')
     GROUP BY oi.product_id
 ) order_stats ON p.id = order_stats.product_id
 WHERE p.is_active = 1;
@@ -64,7 +66,7 @@ CREATE VIEW dbo.vw_SystemHealth
 AS
 SELECT 
     'database' as component,
-    'healthy' as status,
+    'healthy' as systemStatus,
     SYSUTCDATETIME() as check_time,
     (SELECT COUNT(*) FROM dbo.Users WHERE is_active = 1) as active_users,
     (SELECT COUNT(*) FROM dbo.Products WHERE is_active = 1) as active_products,
@@ -88,6 +90,7 @@ GRANT SELECT ON dbo.Products TO app_reader;
 GRANT SELECT ON dbo.Orders TO app_reader;
 GRANT SELECT ON dbo.OrderItems TO app_reader;
 GRANT SELECT ON dbo.OrderStatusHistory TO app_reader;
+GRANT SELECT ON dbo.Statuses TO app_reader;
 GRANT SELECT ON dbo.AppConfig TO app_reader;
 GRANT SELECT ON dbo.vw_OrderSummary TO app_reader;
 GRANT SELECT ON dbo.vw_ProductCatalog TO app_reader;
@@ -109,34 +112,43 @@ GO
 
 CREATE PROCEDURE dbo.sp_UpdateOrderStatus
     @OrderId BIGINT,
-    @NewStatus NVARCHAR(32),
+    @NewStatusCode NVARCHAR(50),
     @ChangedBy NVARCHAR(255) = NULL,
     @Reason NVARCHAR(500) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    
-    DECLARE @OldStatus NVARCHAR(32);
-    
-    -- Get current status
-    SELECT @OldStatus = status 
-    FROM dbo.Orders 
-    WHERE id = @OrderId;
-    
-    IF @OldStatus IS NULL
+
+    DECLARE @OldStatusId INT;
+    DECLARE @OldStatusCode NVARCHAR(50);
+    DECLARE @NewStatusId INT;
+
+    -- Get current status id and code
+    SELECT @OldStatusId = StatusId FROM dbo.Orders WHERE id = @OrderId;
+    SELECT @OldStatusCode = Code FROM dbo.Statuses WHERE Id = @OldStatusId;
+
+    IF @OldStatusId IS NULL
     BEGIN
         THROW 50000, 'Order not found', 1;
         RETURN;
     END
-    
+
+    -- Get new status id
+    SELECT @NewStatusId = Id FROM dbo.Statuses WHERE Code = @NewStatusCode;
+    IF @NewStatusId IS NULL
+    BEGIN
+        THROW 50001, 'Invalid status code', 1;
+        RETURN;
+    END
+
     -- Update order status
     UPDATE dbo.Orders 
-    SET status = @NewStatus, updated_at = SYSUTCDATETIME()
+    SET StatusId = @NewStatusId, updated_at = SYSUTCDATETIME()
     WHERE id = @OrderId;
-    
+
     -- Log status change
-    INSERT INTO dbo.OrderStatusHistory (order_id, old_status, new_status, changed_by, reason)
-    VALUES (@OrderId, @OldStatus, @NewStatus, @ChangedBy, @Reason);
+    INSERT INTO dbo.OrderStatusHistory (OrderId, OldStatus, NewStatus, ChangedBy, ChangedAt, Reason)
+    VALUES (@OrderId, @OldStatusCode, @NewStatusCode, @ChangedBy, SYSUTCDATETIME(), @Reason);
 END;
 GO
 

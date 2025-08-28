@@ -1,0 +1,42 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # SQL Server monitoring (requires SQL Server exporter)
+  # Uncomment and configure if you add SQL Server exporter
+  - job_name: 'sqlserver'
+    static_configs:
+      - targets: ['sqlserver-exporter:9399']
+
+  # Application metrics (if your app exposes metrics)
+  # - job_name: 'application'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:8080']
+  #   metrics_path: '/metrics'
+
+  # Docker container metrics (requires cAdvisor)
+  # - job_name: 'cadvisor'
+  #   static_configs:
+  #     - targets: ['cadvisor:8080']
+
+  # Node exporter for system metrics (if added)
+  # - job_name: 'node'
+  #   static_configs:
+  #     - targets: ['node-exporter:9100']
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093

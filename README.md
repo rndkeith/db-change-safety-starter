@@ -1,3 +1,22 @@
+## 💰 Flyway Editions
+
+This starter works with **Flyway Community (free)** out of the box. Some advanced features require Flyway Teams+ subscription:
+
+### ✅ **Included (Free)**
+- All core migration functionality
+- Policy validation and smoke testing
+- CI/CD pipeline with validation
+- Development environment
+
+### 💰 **Requires Flyway Teams+ License**
+- Dry run SQL preview in CI
+- Undo migrations
+- Advanced schema validation
+
+See `FLYWAY_EDITIONS.md` for detailed comparison and upgrade instructions.
+
+---
+
 # Database Change Safety Starter
 
 A production-ready starter template that enforces safe, backward-compatible database changes using Flyway, policy validation, and automated testing.
@@ -14,13 +33,27 @@ This repository provides a complete framework for managing database schema chang
 
 ## Quick Start
 
+**🚀 New to this starter? Run the setup script first:**
+```bash
+.\setup.ps1                    # Quick overview and setup instructions
+.\setup.ps1 -ShowFeatures      # Detailed feature comparison (free vs paid)
+```
+
 1. **Local Development Setup**
    ```bash
    cd dev
    docker compose up -d
    ```
 
-2. **Validate and Test Changes**
+2. **Initialize Database**
+   ```bash
+   .\init-db.ps1              # Basic initialization
+   .\init-db.ps1 -CheckLicense # Check Flyway license features
+   .\init-db.ps1 -DryRun       # Preview SQL (requires Teams+)
+   .\init-db.ps1 -SeedTestData # Add extra test data
+   ```
+
+3. **Validate and Test Changes**
    ```bash
    # Check policy compliance
    ./tools/policy-validate/policy-validate.sh
@@ -33,7 +66,13 @@ This repository provides a complete framework for managing database schema chang
    dotnet run
    ```
 
-3. **Add a New Migration**
+4. **Stop Environment Cleanly**
+   ```bash
+   .\cleanup.ps1            # Windows - stops all services
+   ./cleanup.sh             # Linux/Mac - stops all services
+   ```
+
+5. **Add a New Migration**
    - Create file: `migrations/Vxxx__description.sql`
    - Include required metadata header (see examples)
    - Follow additive-only principles
@@ -49,26 +88,28 @@ This starter enforces a **safety-first** approach to database changes:
 - Add indexes
 - Widen column types (e.g., VARCHAR(50) → VARCHAR(100))
 - Add foreign key constraints
+- Normalize status columns to use StatusId and a Statuses lookup table
 - Create views and stored procedures
 
 ### ⚠️ Requires Special Handling
 - Making columns NOT NULL (requires two-stage deployment)
 - Renaming columns (requires synonym/alias strategy)
 - Changing column types (requires careful compatibility analysis)
+- Migrating from legacy status string columns to StatusId and Statuses table (requires backfill and dual-read/write period)
 
 ### ❌ Never Allowed
-- DROP TABLE or DROP COLUMN
+- DROP TABLE or DROP COLUMN (except for legacy status string columns after migration to StatusId)
 - Narrowing column types
 - Breaking changes to views
 - Non-idempotent operations
 
 ### Two-Stage Changes
 
-For operations that could break backward compatibility:
+For operations that could break backward compatibility (e.g., status column migration):
 
-1. **Stage 1**: Add new structure alongside old
-2. **Transition Period**: Application supports both old and new
-3. **Stage 2**: Remove old structure after confirming no usage
+1. **Stage 1**: Add new StatusId column and Statuses table alongside legacy status string column
+2. **Transition Period**: Application supports both old and new (dual-read/write)
+3. **Stage 2**: Remove legacy status column after confirming no usage
 
 ## CI/CD Pipeline
 

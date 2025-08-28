@@ -49,23 +49,23 @@ class ReleaseNotesGenerator {
   }
 
   async generate(fromVersion?: string, toVersion?: string): Promise<void> {
-    console.log('🔄 Connecting to database...');
+  console.log('Connecting to database...');
     const pool = await sql.connect(this.connectionString);
 
     try {
-      console.log('📊 Fetching migration history...');
+  console.log('Fetching migration history...');
       const migrations = await this.fetchMigrationHistory(pool, fromVersion, toVersion);
 
-      console.log('📁 Reading migration files for metadata...');
+  console.log('Reading migration files for metadata...');
       const enrichedMigrations = await this.enrichWithMetadata(migrations);
 
-      console.log('📝 Generating release notes...');
+  console.log('Generating release notes...');
       const releaseNotes = await this.generateReleaseNotes(enrichedMigrations, fromVersion, toVersion);
 
-      console.log('💾 Writing release notes to file...');
+  console.log('Writing release notes to file...');
       await this.writeReleaseNotes(releaseNotes);
 
-      console.log('✅ Release notes generated successfully!');
+  console.log('Release notes generated successfully!');
     } finally {
       await pool.close();
     }
@@ -144,7 +144,7 @@ class ReleaseNotesGenerator {
       const files = await globby(pattern);
       return files.length > 0 ? files[0] : null;
     } catch (error) {
-      console.warn(`⚠️  Could not find migration file for version ${version}`);
+  console.warn(`Could not find migration file for version ${version}`);
       return null;
     }
   }
@@ -181,7 +181,7 @@ class ReleaseNotesGenerator {
 
       return metadata;
     } catch (error) {
-      console.warn(`⚠️  Could not extract metadata from ${filePath}: ${error}`);
+  console.warn(`Could not extract metadata from ${filePath}: ${error}`);
       return {};
     }
   }
@@ -229,12 +229,12 @@ class ReleaseNotesGenerator {
     const fullPath = path.join(this.outputPath, filename);
 
     await fs.writeFile(fullPath, content, 'utf8');
-    console.log(`📄 Release notes written to: ${fullPath}`);
+  console.log(`Release notes written to: ${fullPath}`);
 
     // Also write to a standard filename for CI/CD systems
     const standardPath = path.join(this.outputPath, 'RELEASE_NOTES.md');
     await fs.writeFile(standardPath, content, 'utf8');
-    console.log(`📄 Release notes also written to: ${standardPath}`);
+  console.log(`Release notes also written to: ${standardPath}`);
   }
 }
 
@@ -249,20 +249,20 @@ Handlebars.registerHelper('capitalize', (str: string) => {
 
 Handlebars.registerHelper('riskColor', (risk: string) => {
   switch (risk.toLowerCase()) {
-    case 'high': return '🔴';
-    case 'medium': return '🟡';
-    case 'low': return '🟢';
-    default: return '⚪';
+  case 'high': return 'HIGH';
+  case 'medium': return 'MEDIUM';
+  case 'low': return 'LOW';
+  default: return 'UNKNOWN';
   }
 });
 
 Handlebars.registerHelper('changeTypeIcon', (changeType: string) => {
   switch (changeType.toLowerCase()) {
-    case 'additive': return '➕';
-    case 'modification': return '🔄';
-    case 'deprecation': return '⚠️';
-    case 'removal': return '🗑️';
-    default: return '📝';
+  case 'additive': return 'ADD';
+  case 'modification': return 'MODIFICATION';
+  case 'deprecation': return 'DEPRECATION';
+  case 'removal': return 'REMOVAL';
+  default: return 'NOTE';
   }
 });
 
@@ -286,8 +286,8 @@ const options = program.opts();
 
 async function main() {
   if (!options.connection) {
-    console.error('❌ Error: Database connection string is required.');
-    console.error('   Use --connection flag or set RELEASE_NOTES_CONN environment variable.');
+  console.error('Error: Database connection string is required.');
+  console.error('   Use --connection flag or set RELEASE_NOTES_CONN environment variable.');
     process.exit(1);
   }
 
@@ -299,13 +299,13 @@ async function main() {
     );
 
     if (options.dryRun) {
-      console.log('🔍 Dry run mode - no files will be written');
+      console.log('Dry run mode - no files will be written');
       // You could implement dry run logic here
     }
 
     await generator.generate(options.from, options.to);
   } catch (error) {
-    console.error('❌ Error generating release notes:', error);
+    console.error('Error generating release notes:', error);
     process.exit(1);
   }
 }
