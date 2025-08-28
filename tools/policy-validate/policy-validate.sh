@@ -5,10 +5,12 @@
 
 set -euo pipefail
 
-# Default paths
-MIGRATIONS_PATH="${1:-../../migrations}"
-POLICY_PATH="${2:-../../policy/migration-policy.yml}"
-BANNED_PATTERNS_PATH="${3:-../../policy/banned-patterns.txt}"
+
+# Always resolve paths relative to the script's location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MIGRATIONS_PATH="${1:-$SCRIPT_DIR/../../migrations}"
+POLICY_PATH="${2:-$SCRIPT_DIR/../../policy/migration-policy.yml}"
+BANNED_PATTERNS_PATH="${3:-$SCRIPT_DIR/../../policy/banned-patterns.txt}"
 
 VALIDATIONS_RUN=0
 FAILURE_COUNT=0

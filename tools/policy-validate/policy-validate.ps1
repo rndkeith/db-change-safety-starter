@@ -1,9 +1,13 @@
 #!/usr/bin/env pwsh
+
 param(
-    [string]$MigrationsPath = "../../migrations", 
-    [string]$PolicyPath = "../../policy/migration-policy.yml",
-    [string]$BannedPatternsPath = "../../policy/banned-patterns.txt"
+    [string]$MigrationsPath = "$ScriptDir/../../migrations", 
+    [string]$PolicyPath = "$ScriptDir/../../policy/migration-policy.yml",
+    [string]$BannedPatternsPath = "$ScriptDir/../../policy/banned-patterns.txt"
 )
+
+# Always resolve paths relative to the script's location
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Policy validation script for database migrations
 # Validates migration files against organizational policies
@@ -138,7 +142,7 @@ function Test-BackwardCompatibility {
     
     foreach ($pattern in $breakingPatterns) {
         if ($Content -match $pattern) {
-            Write-ValidationResult "Potentially breaking operation detected in $Filename: $pattern" "WARN"
+            Write-ValidationResult "Potentially breaking operation detected in $Filename`: $pattern" "WARN"
         }
     }
 }
