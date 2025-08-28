@@ -58,7 +58,8 @@ param(
     [switch]$CheckLicense,
     [switch]$DryRun,
     [string]$DatabaseName = "DevDB",
-    [int]$WaitTimeSeconds = 180
+    [int]$WaitTimeSeconds = 180 ,
+    [switch]$Verbose
 )
 
 $ErrorActionPreference = "Stop"

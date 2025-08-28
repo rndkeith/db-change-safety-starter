@@ -1,45 +1,93 @@
-# .gitignore for db-change-safety-starter
-# Ignore build output
-**/bin/
-**/obj/
+# Database Change Safety Starter - .gitignore
 
-# Ignore VS Code settings
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+
+# IDE Files
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# Ignore user-specific files
+# Build Output
+bin/
+obj/
+out/
+build/
+dist/
+
+# .NET
 *.user
 *.suo
-*.userosscache
-*.sln.docstates
+*.cache
+*.dll
+*.exe
+*.pdb
+*.vspscc
+*.vssscc
+.vs/
+packages/
+[Tt]emp[Ll]og/
+TestResults/
 
-# Ignore Python cache
-__pycache__/
-*.pyc
-
-# Ignore node modules
+# Node.js
 node_modules/
-
-# Ignore environment files
-.env
-.env.*
-
-# Ignore Docker artifacts
-*.pid
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 *.log
-dev/*.db
 
-# Ignore generated release notes
-/tools/release-notes/*.md
+# Flyway
+flyway.conf.local
+*.sql.backup
+*-dryrun-*.sql
+migration-dryrun-*.sql
 
-# Ignore database migration artifacts
-flyway/*.conf
-flyway/*.conf.example
-
-# Ignore OS-specific files
-.DS_Store
-Thumbs.db
-
-# Ignore other temp files
-*.tmp
+# Database
 *.bak
-*.swp
+*.mdf
+*.ldf
+*.sdf
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Environment specific configs
+flyway/conf.prod.conf
+flyway/conf.staging.conf
+*.local.conf
+
+# Sensitive data
+.env
+.env.local
+.env.*.local
+secrets/
+*.key
+*.pem
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.delete
+
+# Release artifacts
+release-notes/REL_*.md
+release-artifacts/
+
+# IDE and system files
+*.orig
+*.rej
+.idea/
+.vscode/settings.json

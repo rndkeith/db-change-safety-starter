@@ -1,0 +1,47 @@
+# Flyway Configuration - Production Environment Template
+# Copy this file to conf.prod.conf and customize for your production environment
+
+# Include shared configuration
+flyway.configFiles=flyway/flyway.conf
+
+# Production database connection - USE ENVIRONMENT VARIABLES
+flyway.url=${FLYWAY_URL}
+flyway.user=${FLYWAY_USER}
+flyway.password=${FLYWAY_PASSWORD}
+
+# Production safety settings
+flyway.cleanDisabled=true
+flyway.baselineOnMigrate=false
+flyway.validateOnMigrate=true
+flyway.outOfOrder=false
+
+# Strict validation for production
+flyway.ignoreMissingMigrations=false
+flyway.ignoreIgnoredMigrations=false
+flyway.ignorePendingMigrations=false
+flyway.ignoreFutureMigrations=false
+flyway.cleanOnValidationError=false
+
+# Production placeholders
+flyway.placeholders.environment=production
+flyway.placeholders.db_name=${DB_NAME}
+
+# Production logging
+flyway.outputQueryResults=false
+flyway.loggers=console
+
+# Production lock settings
+flyway.lockRetryCount=50
+
+# Example environment variables to set:
+# export FLYWAY_URL="jdbc:sqlserver://prod-sql.company.com:1433;databaseName=AppDB;encrypt=true"
+# export FLYWAY_USER="migration_user"
+# export FLYWAY_PASSWORD="secure_password_from_vault"
+# export DB_NAME="AppDB"
+
+# For Azure SQL with Managed Identity:
+# flyway.url=jdbc:sqlserver://server.database.windows.net:1433;databaseName=AppDB;authentication=ActiveDirectoryMSI;encrypt=true
+
+# For connection pooling in production:
+# flyway.connectRetries=3
+# flyway.connectRetriesInterval=10
