@@ -22,7 +22,7 @@ jobs:
         ports:
           - "1433:1433"
         options: >-
-          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P Your_strong_password123 -Q 'select 1'"
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P Your_strong_password123 -C -Q 'select 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
