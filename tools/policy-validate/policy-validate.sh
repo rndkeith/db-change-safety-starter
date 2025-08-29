@@ -149,16 +149,28 @@ test_banned_patterns() {
     fi
     
     while IFS= read -r pattern; do
-        # Skip empty lines and comments
+        # Skip empty lines and comments in patterns file
         if [[ -z "$pattern" ]] || [[ "$pattern" =~ ^[[:space:]]*# ]]; then
             continue
         fi
-        
         ((VALIDATIONS_RUN++))
-        
-        if echo "$content" | grep -Pqi "$pattern"; then
-            log_message "Forbidden pattern '$pattern' found in $filename" "ERROR"
-        fi
+        # Split content into lines and scan, skipping comments
+        in_block_comment=false
+        line_num=0
+        while IFS= read -r line; do
+            ((line_num++))
+            trimmed="$(echo "$line" | sed 's/^ *//')"
+            # Check for start/end of block comment
+            if [[ "$trimmed" =~ ^/\* ]]; then in_block_comment=true; fi
+            if $in_block_comment; then
+                if [[ "$trimmed" =~ \*/ ]]; then in_block_comment=false; fi
+                continue
+            fi
+            if [[ "$trimmed" =~ ^-- ]]; then continue; fi
+            if echo "$line" | grep -Pqi "$pattern"; then
+                log_message "Forbidden pattern '$pattern' found in $filename at line $line_num: $line" "ERROR"
+            fi
+        done <<< "$content"
     done < "$patterns_file"
 }
 
@@ -188,14 +200,25 @@ test_backward_compatibility() {
         log_message "Migration $filename is marked as NOT backward compatible - requires special review" "WARN"
     fi
     
-    # Check for potentially breaking operations
+    # Check for potentially breaking operations, skipping comments
     local breaking_patterns=("ALTER\s+COLUMN\s+.*NOT\s+NULL" "DROP\s+COLUMN" "RENAME\s+COLUMN")
-    
-    for pattern in "${breaking_patterns[@]}"; do
-        if echo "$content" | grep -Pqi "$pattern"; then
-            log_message "Potentially breaking operation detected in $filename: $pattern" "WARN"
+    in_block_comment=false
+    line_num=0
+    while IFS= read -r line; do
+        ((line_num++))
+        trimmed="$(echo "$line" | sed 's/^ *//')"
+        if [[ "$trimmed" =~ ^/\* ]]; then in_block_comment=true; fi
+        if $in_block_comment; then
+            if [[ "$trimmed" =~ \*/ ]]; then in_block_comment=false; fi
+            continue
         fi
-    done
+        if [[ "$trimmed" =~ ^-- ]]; then continue; fi
+        for pattern in "${breaking_patterns[@]}"; do
+            if echo "$line" | grep -Pqi "$pattern"; then
+                log_message "Potentially breaking operation detected in $filename at line $line_num: $pattern" "WARN"
+            fi
+        done
+    done <<< "$content"
 }
 
 # Main execution
