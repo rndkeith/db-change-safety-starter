@@ -181,9 +181,9 @@ test_filename_convention() {
     local filename="$1"
     
     ((VALIDATIONS_RUN++))
-    
     if [[ ! "$filename" =~ ^V[0-9]{3}__.+\.sql$ ]]; then
         log_message "Filename '$filename' does not match required pattern 'V###__*.sql'" "ERROR"
+        echo "ERROR: Filename validation failed for $filename" >&2
     else
         log_message "Filename '$filename' follows naming convention" "SUCCESS"
     fi
@@ -300,10 +300,10 @@ main() {
     else
         log_message "Failures: $FAILURE_COUNT" "ERROR"
         log_message "Policy validation FAILED with $FAILURE_COUNT errors" "ERROR"
-        echo -e "\n--- FINAL ERROR SUMMARY ---"
-        echo "Script exited with code 1. See above for details."
-        echo "Last 20 lines of output:"
-        tail -n 20 "$0" 2>/dev/null || true
+        echo -e "\n--- FINAL ERROR SUMMARY ---" >&2
+        echo "Script exited with code 1. See above for details." >&2
+        echo "Total validations run: $VALIDATIONS_RUN" >&2
+        echo "Failures: $FAILURE_COUNT" >&2
         exit 1
     fi
 }
