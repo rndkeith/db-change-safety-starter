@@ -89,9 +89,11 @@ load_policy() {
 test_yaml_header() {
     local content="$1"
     local filename="$2"
-    # Check required fields from policy
-    for field in "${REQUIRED_FIELDS[@]}"; do
-    
+    ((VALIDATIONS_RUN++))
+    if ! echo "$content" | grep -Pzo '(?s)/\*---.*?---\*/' > /dev/null; then
+        log_message "Missing required YAML metadata header in $filename" "ERROR"
+        return 1
+    fi
     log_message "YAML metadata header found in $filename" "SUCCESS"
     return 0
 }
@@ -104,56 +106,45 @@ get_yaml_metadata() {
 
 # Test required metadata fields
 test_required_fields() {
-        for valid in "${VALID_RISK_LEVELS[@]}"; do
+    local yaml_content="$1"
     local filename="$2"
-    
-    local required_fields=("change_id" "title" "ticket" "risk" "change_type" "backward_compatible" "owner" "rollout_plan" "rollback_plan")
-    local valid_risk_levels=("low" "medium" "high")
-    local valid_change_types=("additive" "modification" "deprecation" "removal")
-    
-    # Check required fields
-            log_message "Invalid risk level '$risk_level' in $filename. Must be one of: ${VALID_RISK_LEVELS[*]}" "ERROR"
+    # Check required fields from policy
+    for field in "${REQUIRED_FIELDS[@]}"; do
         ((VALIDATIONS_RUN++))
-        if ! echo "$yaml_content" | grep -q "^$field\s*:"; then
+        if ! echo "$yaml_content" | grep -q "^$field\s*:\s*"; then
             log_message "Missing required metadata field '$field' in $filename" "ERROR"
         else
             log_message "Required field '$field' found in $filename" "SUCCESS"
         fi
     done
-    
     # Validate risk level
     ((VALIDATIONS_RUN++))
-        for valid in "${VALID_CHANGE_TYPES[@]}"; do
-        local risk_level=$(echo "$yaml_content" | grep "^risk\s*:" | sed 's/^risk\s*:\s*//' | tr -d ' ')
+    if echo "$yaml_content" | grep -q "^risk\s*:\s*"; then
+        local risk_level=$(echo "$yaml_content" | grep "^risk\s*:\s*" | sed 's/^risk\s*:\s*//' | tr -d ' ')
         local valid_risk=false
-        for valid in "${valid_risk_levels[@]}"; do
+        for valid in "${VALID_RISK_LEVELS[@]}"; do
             if [[ "$risk_level" == "$valid" ]]; then
-                valid_risk=true
-                break
+                valid_risk=true; break
             fi
-            log_message "Invalid change type '$change_type' in $filename. Must be one of: ${VALID_CHANGE_TYPES[*]}" "ERROR"
-        
+        done
         if [[ "$valid_risk" == "false" ]]; then
-            log_message "Invalid risk level '$risk_level' in $filename. Must be one of: ${valid_risk_levels[*]}" "ERROR"
+            log_message "Invalid risk level '$risk_level' in $filename. Must be one of: ${VALID_RISK_LEVELS[*]}" "ERROR"
         else
             log_message "Valid risk level '$risk_level' in $filename" "SUCCESS"
         fi
     fi
-    
     # Validate change type
     ((VALIDATIONS_RUN++))
-    # Use policy-provided PCRE pattern with grep -P
-    if ! echo "$filename" | grep -Pq "$FILENAME_PATTERN"; then
-        log_message "Filename '$filename' does not match required pattern '$FILENAME_PATTERN'" "ERROR"
-        echo "ERROR: Filename validation failed for $filename (pattern: $FILENAME_PATTERN)" >&2
-    else
-        log_message "Filename '$filename' follows naming convention" "SUCCESS"
-    fi
+    if echo "$yaml_content" | grep -q "^change_type\s*:\s*"; then
+        local change_type=$(echo "$yaml_content" | grep "^change_type\s*:\s*" | sed 's/^change_type\s*:\s*//' | tr -d ' ')
+        local valid_type=false
+        for valid in "${VALID_CHANGE_TYPES[@]}"; do
+            if [[ "$change_type" == "$valid" ]]; then
+                valid_type=true; break
             fi
         done
-        
         if [[ "$valid_type" == "false" ]]; then
-            log_message "Invalid change type '$change_type' in $filename. Must be one of: ${valid_change_types[*]}" "ERROR"
+            log_message "Invalid change type '$change_type' in $filename. Must be one of: ${VALID_CHANGE_TYPES[*]}" "ERROR"
         else
             log_message "Valid change type '$change_type' in $filename" "SUCCESS"
         fi
@@ -200,11 +191,10 @@ test_banned_patterns() {
 # Test filename convention
 test_filename_convention() {
     local filename="$1"
-    
     ((VALIDATIONS_RUN++))
-    if [[ ! "$filename" =~ ^V[0-9]{3}__.+\.sql$ ]]; then
-        log_message "Filename '$filename' does not match required pattern 'V###__*.sql'" "ERROR"
-        echo "ERROR: Filename validation failed for $filename" >&2
+    if ! echo "$filename" | grep -Pq "$FILENAME_PATTERN"; then
+        log_message "Filename '$filename' does not match required pattern '$FILENAME_PATTERN'" "ERROR"
+        echo "ERROR: Filename validation failed for $filename (pattern: $FILENAME_PATTERN)" >&2
     else
         log_message "Filename '$filename' follows naming convention" "SUCCESS"
     fi
