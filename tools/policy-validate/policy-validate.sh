@@ -230,67 +230,67 @@ main() {
     
     # Check dependencies
     check_dependencies
-    
+
     # Check if paths exist
     if [[ ! -d "$MIGRATIONS_PATH" ]]; then
         log_message "Migrations directory not found: $MIGRATIONS_PATH" "ERROR"
-        exit 1
+        echo ""; log_message "Validation Summary:" "INFO"; log_message "Total validations run: $VALIDATIONS_RUN" "INFO"; log_message "Failures: $FAILURE_COUNT" "ERROR"; exit 1
     fi
-    
+
     if [[ ! -f "$POLICY_PATH" ]]; then
         log_message "Policy file not found: $POLICY_PATH" "ERROR"
-        exit 1
+        echo ""; log_message "Validation Summary:" "INFO"; log_message "Total validations run: $VALIDATIONS_RUN" "INFO"; log_message "Failures: $FAILURE_COUNT" "ERROR"; exit 1
     fi
-    
+
     log_message "Policy file loaded successfully"
-    
+
     # Get migration files
     local migration_files=()
     while IFS= read -r -d '' file; do
         migration_files+=("$file")
     done < <(find "$MIGRATIONS_PATH" -name "V*.sql" -print0 | sort -z)
-    
+
     if [[ ${#migration_files[@]} -eq 0 ]]; then
         log_message "No migration files found in $MIGRATIONS_PATH" "WARN"
-        exit 0
+        echo ""; log_message "Validation Summary:" "INFO"; log_message "Total validations run: $VALIDATIONS_RUN" "INFO"; log_message "Failures: $FAILURE_COUNT" "SUCCESS"; log_message "Policy validation PASSED - all migrations comply with policy" "SUCCESS"; exit 0
     fi
-    
+
     log_message "Found ${#migration_files[@]} migration files to validate"
-    
+
     # Validate each migration file
     for file in "${migration_files[@]}"; do
         local filename=$(basename "$file")
         log_message "Validating $filename" "INFO"
-        
+
         local content=$(cat "$file")
-        
+
         # Test filename convention
         test_filename_convention "$filename"
-        
+
         # Test YAML header exists
         if test_yaml_header "$content" "$filename"; then
             local yaml_content=$(get_yaml_metadata "$content")
-            
+
             if [[ -n "$yaml_content" ]]; then
                 # Test required metadata fields
                 test_required_fields "$yaml_content" "$filename"
-                
+
                 # Test backward compatibility
                 test_backward_compatibility "$yaml_content" "$content" "$filename"
             fi
         fi
-        
+
         # Test banned patterns
         test_banned_patterns "$content" "$filename" "$BANNED_PATTERNS_PATH"
-        
+
         log_message "Completed validation for $filename"
     done
-    
-    # Summary
+
+    # Always print summary before exit
     echo ""
     log_message "Validation Summary:" "INFO"
     log_message "Total validations run: $VALIDATIONS_RUN" "INFO"
-    
+
     if [[ $FAILURE_COUNT -eq 0 ]]; then
         log_message "Failures: $FAILURE_COUNT" "SUCCESS"
         log_message "Policy validation PASSED - all migrations comply with policy" "SUCCESS"
