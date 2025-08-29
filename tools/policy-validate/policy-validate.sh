@@ -1,14 +1,18 @@
+
 #!/bin/bash
 
 # Policy validation script for database migrations (Shell version)
 # Validates migration files against organizational policies
 
 set -euo pipefail
+set -x
 
-# Default paths
-MIGRATIONS_PATH="${1:-../../migrations}"
-POLICY_PATH="${2:-../../policy/migration-policy.yml}"
-BANNED_PATTERNS_PATH="${3:-../../policy/banned-patterns.txt}"
+
+# Always resolve paths relative to the script's location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MIGRATIONS_PATH="${1:-$SCRIPT_DIR/../../migrations}"
+POLICY_PATH="${2:-$SCRIPT_DIR/../../policy/migration-policy.yml}"
+BANNED_PATTERNS_PATH="${3:-$SCRIPT_DIR/../../policy/banned-patterns.txt}"
 
 VALIDATIONS_RUN=0
 FAILURE_COUNT=0
@@ -43,6 +47,12 @@ log_message() {
 }
 
 # Check if required tools are available
+
+# Policy-driven settings
+FILENAME_PATTERN=""
+REQUIRED_FIELDS=()
+VALID_RISK_LEVELS=()
+VALID_CHANGE_TYPES=()
 check_dependencies() {
     if ! command -v yq &> /dev/null; then
         log_message "yq command not found. Please install yq to parse YAML files." "ERROR"
@@ -55,18 +65,35 @@ check_dependencies() {
     fi
 }
 
+# Load policy values (filename pattern, required fields, risk levels, change types)
+load_policy() {
+    FILENAME_PATTERN=$(yq -r '.naming.filename_pattern // "^V[0-9]{3}__.+\\.sql$"' "$POLICY_PATH")
+    mapfile -t REQUIRED_FIELDS < <(yq -r '.metadata_requirements.required_fields[]' "$POLICY_PATH")
+    mapfile -t VALID_RISK_LEVELS < <(yq -r '.metadata_requirements.risk_levels[]' "$POLICY_PATH")
+    mapfile -t VALID_CHANGE_TYPES < <(yq -r '.metadata_requirements.change_types[]' "$POLICY_PATH")
+
+    # Basic fallbacks if policy sections are missing
+    if [[ ${#REQUIRED_FIELDS[@]} -eq 0 ]]; then
+        REQUIRED_FIELDS=("change_id" "title" "ticket" "risk" "change_type" "backward_compatible" "owner" "rollout_plan" "rollback_plan")
+    fi
+    if [[ ${#VALID_RISK_LEVELS[@]} -eq 0 ]]; then
+        VALID_RISK_LEVELS=("low" "medium" "high")
+    fi
+    if [[ ${#VALID_CHANGE_TYPES[@]} -eq 0 ]]; then
+        VALID_CHANGE_TYPES=("additive" "modification" "deprecation" "removal")
+    fi
+
+    log_message "Using filename pattern from policy: $FILENAME_PATTERN"
+}
 # Test YAML header exists
 test_yaml_header() {
     local content="$1"
     local filename="$2"
-    
     ((VALIDATIONS_RUN++))
-    
     if ! echo "$content" | grep -Pzo '(?s)/\*---.*?---\*/' > /dev/null; then
         log_message "Missing required YAML metadata header in $filename" "ERROR"
         return 1
     fi
-    
     log_message "YAML metadata header found in $filename" "SUCCESS"
     return 0
 }
@@ -81,54 +108,43 @@ get_yaml_metadata() {
 test_required_fields() {
     local yaml_content="$1"
     local filename="$2"
-    
-    local required_fields=("change_id" "title" "ticket" "risk" "change_type" "backward_compatible" "owner" "rollout_plan" "rollback_plan")
-    local valid_risk_levels=("low" "medium" "high")
-    local valid_change_types=("additive" "modification" "deprecation" "removal")
-    
-    # Check required fields
-    for field in "${required_fields[@]}"; do
+    # Check required fields from policy
+    for field in "${REQUIRED_FIELDS[@]}"; do
         ((VALIDATIONS_RUN++))
-        if ! echo "$yaml_content" | grep -q "^$field\s*:"; then
+        if ! echo "$yaml_content" | grep -q "^$field\s*:\s*"; then
             log_message "Missing required metadata field '$field' in $filename" "ERROR"
         else
             log_message "Required field '$field' found in $filename" "SUCCESS"
         fi
     done
-    
     # Validate risk level
     ((VALIDATIONS_RUN++))
-    if echo "$yaml_content" | grep -q "^risk\s*:"; then
-        local risk_level=$(echo "$yaml_content" | grep "^risk\s*:" | sed 's/^risk\s*:\s*//' | tr -d ' ')
+    if echo "$yaml_content" | grep -q "^risk\s*:\s*"; then
+        local risk_level=$(echo "$yaml_content" | grep "^risk\s*:\s*" | sed 's/^risk\s*:\s*//' | tr -d ' ')
         local valid_risk=false
-        for valid in "${valid_risk_levels[@]}"; do
+        for valid in "${VALID_RISK_LEVELS[@]}"; do
             if [[ "$risk_level" == "$valid" ]]; then
-                valid_risk=true
-                break
+                valid_risk=true; break
             fi
         done
-        
         if [[ "$valid_risk" == "false" ]]; then
-            log_message "Invalid risk level '$risk_level' in $filename. Must be one of: ${valid_risk_levels[*]}" "ERROR"
+            log_message "Invalid risk level '$risk_level' in $filename. Must be one of: ${VALID_RISK_LEVELS[*]}" "ERROR"
         else
             log_message "Valid risk level '$risk_level' in $filename" "SUCCESS"
         fi
     fi
-    
     # Validate change type
     ((VALIDATIONS_RUN++))
-    if echo "$yaml_content" | grep -q "^change_type\s*:"; then
-        local change_type=$(echo "$yaml_content" | grep "^change_type\s*:" | sed 's/^change_type\s*:\s*//' | tr -d ' ')
+    if echo "$yaml_content" | grep -q "^change_type\s*:\s*"; then
+        local change_type=$(echo "$yaml_content" | grep "^change_type\s*:\s*" | sed 's/^change_type\s*:\s*//' | tr -d ' ')
         local valid_type=false
-        for valid in "${valid_change_types[@]}"; do
+        for valid in "${VALID_CHANGE_TYPES[@]}"; do
             if [[ "$change_type" == "$valid" ]]; then
-                valid_type=true
-                break
+                valid_type=true; break
             fi
         done
-        
         if [[ "$valid_type" == "false" ]]; then
-            log_message "Invalid change type '$change_type' in $filename. Must be one of: ${valid_change_types[*]}" "ERROR"
+            log_message "Invalid change type '$change_type' in $filename. Must be one of: ${VALID_CHANGE_TYPES[*]}" "ERROR"
         else
             log_message "Valid change type '$change_type' in $filename" "SUCCESS"
         fi
@@ -147,27 +163,38 @@ test_banned_patterns() {
     fi
     
     while IFS= read -r pattern; do
-        # Skip empty lines and comments
+        # Skip empty lines and comments in patterns file
         if [[ -z "$pattern" ]] || [[ "$pattern" =~ ^[[:space:]]*# ]]; then
             continue
         fi
-        
         ((VALIDATIONS_RUN++))
-        
-        if echo "$content" | grep -Pqi "$pattern"; then
-            log_message "Forbidden pattern '$pattern' found in $filename" "ERROR"
-        fi
+        # Split content into lines and scan, skipping comments
+        in_block_comment=false
+        line_num=0
+        while IFS= read -r line; do
+            ((line_num++))
+            trimmed="$(echo "$line" | sed 's/^ *//')"
+            # Check for start/end of block comment
+            if [[ "$trimmed" =~ ^/\* ]]; then in_block_comment=true; fi
+            if $in_block_comment; then
+                if [[ "$trimmed" =~ \*/ ]]; then in_block_comment=false; fi
+                continue
+            fi
+            if [[ "$trimmed" =~ ^-- ]]; then continue; fi
+            if echo "$line" | grep -Pqi "$pattern"; then
+                log_message "Forbidden pattern '$pattern' found in $filename at line $line_num: $line" "ERROR"
+            fi
+        done <<< "$content"
     done < "$patterns_file"
 }
 
 # Test filename convention
 test_filename_convention() {
     local filename="$1"
-    
     ((VALIDATIONS_RUN++))
-    
-    if [[ ! "$filename" =~ ^V[0-9]{3}__.+\.sql$ ]]; then
-        log_message "Filename '$filename' does not match required pattern 'V###__*.sql'" "ERROR"
+    if ! echo "$filename" | grep -Pq "$FILENAME_PATTERN"; then
+        log_message "Filename '$filename' does not match required pattern '$FILENAME_PATTERN'" "ERROR"
+        echo "ERROR: Filename validation failed for $filename (pattern: $FILENAME_PATTERN)" >&2
     else
         log_message "Filename '$filename' follows naming convention" "SUCCESS"
     fi
@@ -186,14 +213,25 @@ test_backward_compatibility() {
         log_message "Migration $filename is marked as NOT backward compatible - requires special review" "WARN"
     fi
     
-    # Check for potentially breaking operations
+    # Check for potentially breaking operations, skipping comments
     local breaking_patterns=("ALTER\s+COLUMN\s+.*NOT\s+NULL" "DROP\s+COLUMN" "RENAME\s+COLUMN")
-    
-    for pattern in "${breaking_patterns[@]}"; do
-        if echo "$content" | grep -Pqi "$pattern"; then
-            log_message "Potentially breaking operation detected in $filename: $pattern" "WARN"
+    in_block_comment=false
+    line_num=0
+    while IFS= read -r line; do
+        ((line_num++))
+        trimmed="$(echo "$line" | sed 's/^ *//')"
+        if [[ "$trimmed" =~ ^/\* ]]; then in_block_comment=true; fi
+        if $in_block_comment; then
+            if [[ "$trimmed" =~ \*/ ]]; then in_block_comment=false; fi
+            continue
         fi
-    done
+        if [[ "$trimmed" =~ ^-- ]]; then continue; fi
+        for pattern in "${breaking_patterns[@]}"; do
+            if echo "$line" | grep -Pqi "$pattern"; then
+                log_message "Potentially breaking operation detected in $filename at line $line_num: $pattern" "WARN"
+            fi
+        done
+    done <<< "$content"
 }
 
 # Main execution
@@ -205,67 +243,69 @@ main() {
     
     # Check dependencies
     check_dependencies
-    
+
     # Check if paths exist
     if [[ ! -d "$MIGRATIONS_PATH" ]]; then
         log_message "Migrations directory not found: $MIGRATIONS_PATH" "ERROR"
-        exit 1
+        echo ""; log_message "Validation Summary:" "INFO"; log_message "Total validations run: $VALIDATIONS_RUN" "INFO"; log_message "Failures: $FAILURE_COUNT" "ERROR"; exit 1
     fi
-    
+
     if [[ ! -f "$POLICY_PATH" ]]; then
         log_message "Policy file not found: $POLICY_PATH" "ERROR"
-        exit 1
+        echo ""; log_message "Validation Summary:" "INFO"; log_message "Total validations run: $VALIDATIONS_RUN" "INFO"; log_message "Failures: $FAILURE_COUNT" "ERROR"; exit 1
     fi
-    
+
     log_message "Policy file loaded successfully"
-    
+    # Load policy-driven values
+    load_policy
+
     # Get migration files
     local migration_files=()
     while IFS= read -r -d '' file; do
         migration_files+=("$file")
     done < <(find "$MIGRATIONS_PATH" -name "V*.sql" -print0 | sort -z)
-    
+
     if [[ ${#migration_files[@]} -eq 0 ]]; then
         log_message "No migration files found in $MIGRATIONS_PATH" "WARN"
-        exit 0
+        echo ""; log_message "Validation Summary:" "INFO"; log_message "Total validations run: $VALIDATIONS_RUN" "INFO"; log_message "Failures: $FAILURE_COUNT" "SUCCESS"; log_message "Policy validation PASSED - all migrations comply with policy" "SUCCESS"; exit 0
     fi
-    
+
     log_message "Found ${#migration_files[@]} migration files to validate"
-    
+
     # Validate each migration file
     for file in "${migration_files[@]}"; do
         local filename=$(basename "$file")
         log_message "Validating $filename" "INFO"
-        
+
         local content=$(cat "$file")
-        
+
         # Test filename convention
         test_filename_convention "$filename"
-        
+
         # Test YAML header exists
         if test_yaml_header "$content" "$filename"; then
             local yaml_content=$(get_yaml_metadata "$content")
-            
+
             if [[ -n "$yaml_content" ]]; then
                 # Test required metadata fields
                 test_required_fields "$yaml_content" "$filename"
-                
+
                 # Test backward compatibility
                 test_backward_compatibility "$yaml_content" "$content" "$filename"
             fi
         fi
-        
+
         # Test banned patterns
         test_banned_patterns "$content" "$filename" "$BANNED_PATTERNS_PATH"
-        
+
         log_message "Completed validation for $filename"
     done
-    
-    # Summary
+
+    # Always print summary before exit
     echo ""
     log_message "Validation Summary:" "INFO"
     log_message "Total validations run: $VALIDATIONS_RUN" "INFO"
-    
+
     if [[ $FAILURE_COUNT -eq 0 ]]; then
         log_message "Failures: $FAILURE_COUNT" "SUCCESS"
         log_message "Policy validation PASSED - all migrations comply with policy" "SUCCESS"
@@ -273,6 +313,10 @@ main() {
     else
         log_message "Failures: $FAILURE_COUNT" "ERROR"
         log_message "Policy validation FAILED with $FAILURE_COUNT errors" "ERROR"
+        echo -e "\n--- FINAL ERROR SUMMARY ---" >&2
+        echo "Script exited with code 1. See above for details." >&2
+        echo "Total validations run: $VALIDATIONS_RUN" >&2
+        echo "Failures: $FAILURE_COUNT" >&2
         exit 1
     fi
 }

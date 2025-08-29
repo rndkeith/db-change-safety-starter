@@ -51,22 +51,25 @@ DROP INDEX IX_Orders_status ON dbo.Orders;
 4. Validate changes successful
 5. Run smoke tests
 
-### Method 2: Flyway Undo (If Available)
+### Method 2: Flyway Undo (If Available - Requires Teams+ License)
 **When to use:** Flyway Teams/Enterprise with undo migrations  
 **Timeline:** 15-30 minutes  
 **Risk:** Medium  
+**Requires:** Flyway Teams+ license and undo migration files
 
 ```bash
-# Execute undo migration
+# Execute undo migration (Teams+ feature)
 flyway -configFiles=flyway/conf.prod.conf undo
 ```
 
 **Steps:**
-1. Verify undo migration exists
+1. Verify undo migration exists and you have Teams+ license
 2. Backup current state
 3. Execute flyway undo command
 4. Validate rollback successful
 5. Update application if needed
+
+**Note:** This requires Flyway Teams+ subscription and pre-written undo migrations.
 
 ### Method 3: Database Restore (Last Resort)
 **When to use:** Critical failures, data corruption, or complex rollbacks  

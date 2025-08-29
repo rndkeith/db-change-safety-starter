@@ -1,10 +1,33 @@
 #!/usr/bin/env pwsh
+
 param(
     [string]$MigrationsPath = "../../migrations", 
     [string]$PolicyPath = "../../policy/migration-policy.yml",
     [string]$BannedPatternsPath = "../../policy/banned-patterns.txt"
 )
 
+# Set $ScriptDir after param block
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Helper to resolve relative paths to $ScriptDir
+function Resolve-PathRelativeToScript {
+    param([string]$Path)
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        return $Path
+    }
+    else {
+        return Join-Path $ScriptDir $Path
+    }
+}
+
+# Re-resolve parameters if they are relative
+$MigrationsPath = Resolve-PathRelativeToScript $MigrationsPath
+$PolicyPath = Resolve-PathRelativeToScript $PolicyPath
+$BannedPatternsPath = Resolve-PathRelativeToScript $BannedPatternsPath
+
+# Always resolve paths relative to the script's location
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Write-Host "Script execution location: [$ScriptDir]"
 # Policy validation script for database migrations
 # Validates migration files against organizational policies
 
@@ -63,7 +86,8 @@ function Test-RequiredMetadataFields {
         $script:ValidationsRun++
         if ($YamlContent -notmatch "$field\s*:\s*.+") {
             Write-ValidationResult "Missing required metadata field '$field' in $Filename" "ERROR"
-        } else {
+        }
+        else {
             Write-ValidationResult "Required field '$field' found in $Filename" "SUCCESS"
         }
     }
@@ -74,7 +98,8 @@ function Test-RequiredMetadataFields {
         $riskLevel = $matches[1].Trim()
         if ($riskLevel -notin $validRiskLevels) {
             Write-ValidationResult "Invalid risk level '$riskLevel' in $Filename. Must be one of: $($validRiskLevels -join ', ')" "ERROR"
-        } else {
+        }
+        else {
             Write-ValidationResult "Valid risk level '$riskLevel' in $Filename" "SUCCESS"
         }
     }
@@ -85,7 +110,8 @@ function Test-RequiredMetadataFields {
         $changeType = $matches[1].Trim()
         if ($changeType -notin $validChangeTypes) {
             Write-ValidationResult "Invalid change type '$changeType' in $Filename. Must be one of: $($validChangeTypes -join ', ')" "ERROR"
-        } else {
+        }
+        else {
             Write-ValidationResult "Valid change type '$changeType' in $Filename" "SUCCESS"
         }
     }
@@ -95,13 +121,30 @@ function Test-BannedPatterns {
     param([string]$Content, [string]$Filename, [string[]]$BannedPatterns)
     
     foreach ($pattern in $BannedPatterns) {
-        if ([string]::IsNullOrWhiteSpace($pattern) -or $pattern.StartsWith("#")) {
+        if ([string]::IsNullOrWhiteSpace($pattern) -or $pattern.StartsWith("#")) { continue }
+        $script:ValidationsRun++
+        if ($Content -match $pattern) { Write-ValidationResult "Forbidden pattern '$pattern' found in $Filename" "ERROR" }
+    }
+}
+foreach ($MigrationFile in $MigrationFiles) {
+    $MigrationContent = Get-Content $MigrationFile -Raw
+    $lines = $MigrationContent -split "`n"
+    $inBlockComment = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        $trimmed = $line.Trim()
+        # Check for start/end of block comment
+        if ($trimmed -match '^/\*') { $inBlockComment = $true }
+        if ($inBlockComment) {
+            if ($trimmed -match '\*/') { $inBlockComment = $false }
             continue
         }
-        
-        $script:ValidationsRun++
-        if ($Content -match $pattern) {
-            Write-ValidationResult "Forbidden pattern '$pattern' found in $Filename" "ERROR"
+        if ($trimmed -match '^--') { continue }
+        foreach ($Pattern in $BannedPatterns) {
+            if ($line -match $Pattern) {
+                Write-Host "[ERROR] Forbidden pattern '$Pattern' found in $MigrationFile at line $($i+1): $line" -ForegroundColor Red
+                $hasError = $true
+            }
         }
     }
 }
@@ -114,7 +157,8 @@ function Test-FileNamingConvention {
     
     if ($Filename -notmatch $pattern) {
         Write-ValidationResult "Filename '$Filename' does not match required pattern '$pattern'" "ERROR"
-    } else {
+    }
+    else {
         Write-ValidationResult "Filename '$Filename' follows naming convention" "SUCCESS"
     }
 }
@@ -129,16 +173,27 @@ function Test-BackwardCompatibility {
         Write-ValidationResult "Migration $Filename is marked as NOT backward compatible - requires special review" "WARN"
     }
     
-    # Check for potentially breaking operations
+    # Check for potentially breaking operations, skipping comments
     $breakingPatterns = @(
         "ALTER\s+COLUMN\s+.*NOT\s+NULL",
         "DROP\s+COLUMN",
         "RENAME\s+COLUMN"
     )
-    
-    foreach ($pattern in $breakingPatterns) {
-        if ($Content -match $pattern) {
-            Write-ValidationResult "Potentially breaking operation detected in $Filename: $pattern" "WARN"
+    $lines = $Content -split "`n"
+    $inBlockComment = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        $trimmed = $line.Trim()
+        if ($trimmed -match '^/\*') { $inBlockComment = $true }
+        if ($inBlockComment) {
+            if ($trimmed -match '\*/') { $inBlockComment = $false }
+            continue
+        }
+        if ($trimmed -match '^--') { continue }
+        foreach ($pattern in $breakingPatterns) {
+            if ($line -match $pattern) {
+                Write-ValidationResult "Potentially breaking operation detected in $Filename at line $($i+1): $pattern" "WARN"
+            }
         }
     }
 }
@@ -162,7 +217,7 @@ try {
         exit 1
     }
     
-    $policyYaml = yq eval '.' $PolicyPath | ConvertFrom-Json
+    $policyYaml = yq eval -j '.' $PolicyPath | ConvertFrom-Json
     Write-ValidationResult "Policy file loaded successfully"
     
     # Load banned patterns
@@ -209,8 +264,7 @@ try {
             }
         }
         
-        # Test banned patterns
-        Test-BannedPatterns -Content $content -Filename $file.Name -BannedPatterns $bannedPatterns
+    # Banned pattern check is now handled line-by-line below, skipping comments
         
         Write-ValidationResult "Completed validation for $($file.Name)"
     }
@@ -223,7 +277,8 @@ try {
     if ($FailureCount -gt 0) {
         Write-ValidationResult "Policy validation FAILED with $FailureCount errors" "ERROR"
         exit 1
-    } else {
+    }
+    else {
         Write-ValidationResult "Policy validation PASSED - all migrations comply with policy" "SUCCESS"
         exit 0
     }

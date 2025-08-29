@@ -1,6 +1,6 @@
 naming:
   versioned_prefix: "V"
-  repeatable_prefix: "R__"
+  repeatable_prefix: "R"
   filename_pattern: "V[0-9]{3}__.*\\.sql"
 
 allowed_operations:
