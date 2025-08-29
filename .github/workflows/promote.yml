@@ -26,13 +26,22 @@ jobs:
           npm install
 
       - name: Generate release notes
-        # Run on tag pushes (v*) and also on main branch merges so notes are generated for artifacts
-        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+        # Run on tag pushes (v*) and optionally on main if a connection string secret is present
+        if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') && secrets.RELEASE_NOTES_DB_CONN != ''
         env:
           RELEASE_NOTES_CONN: ${{ secrets.RELEASE_NOTES_DB_CONN }}
         run: |
           cd tools/release-notes
           npm run gen
+
+      - name: Determine release notes availability
+        id: notes
+        run: |
+          if [ -f "tools/release-notes/REL_${{ github.run_id }}.md" ]; then
+            echo "has_notes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_notes=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create migration artifact
         run: |
@@ -54,8 +63,8 @@ jobs:
           path: release-artifacts/
           retention-days: 90
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Create GitHub Release (with notes)
+        if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.has_notes == 'true'
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -63,6 +72,20 @@ jobs:
           tag_name: ${{ github.ref_name }}
           release_name: Database Migration ${{ github.ref_name }}
           body_path: tools/release-notes/REL_${{ github.run_id }}.md
+          draft: false
+          prerelease: false
+
+      - name: Create GitHub Release (no notes)
+        if: startsWith(github.ref, 'refs/tags/v') && steps.notes.outputs.has_notes != 'true'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Database Migration ${{ github.ref_name }}
+          body: |
+            Database migration release for ${{ github.ref_name }}.
+            Release notes were not generated (missing RELEASE_NOTES_DB_CONN secret or generation skipped).
           draft: false
           prerelease: false
 
