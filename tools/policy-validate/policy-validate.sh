@@ -1,9 +1,11 @@
+
 #!/bin/bash
 
 # Policy validation script for database migrations (Shell version)
 # Validates migration files against organizational policies
 
 set -euo pipefail
+set -x
 
 
 # Always resolve paths relative to the script's location
@@ -298,6 +300,10 @@ main() {
     else
         log_message "Failures: $FAILURE_COUNT" "ERROR"
         log_message "Policy validation FAILED with $FAILURE_COUNT errors" "ERROR"
+        echo -e "\n--- FINAL ERROR SUMMARY ---"
+        echo "Script exited with code 1. See above for details."
+        echo "Last 20 lines of output:"
+        tail -n 20 "$0" 2>/dev/null || true
         exit 1
     fi
 }
