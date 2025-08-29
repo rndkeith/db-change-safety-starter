@@ -40,10 +40,9 @@ jobs:
         run: |
           sudo snap install yq --channel=v4/stable --classic
 
-      - name: Validate migration policy
-        run: |
-          chmod +x ./tools/policy-validate/policy-validate.sh
-          ./tools/policy-validate/policy-validate.sh
+      - name: Validate migration policy (PowerShell)
+        shell: pwsh
+        run: ./tools/policy-validate/policy-validate.ps1
 
       - name: Run Flyway migrate (dry run preview)
         if: env.FLYWAY_LICENSE_KEY
