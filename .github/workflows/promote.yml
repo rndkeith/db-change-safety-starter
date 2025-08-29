@@ -39,7 +39,12 @@ jobs:
           cp -r migrations release-artifacts/
           cp -r flyway release-artifacts/
           cp -r policy release-artifacts/
-          tar -czf release-artifacts/db-migrations-${{ github.sha }}.tar.gz -C release-artifacts .
+          # Stage to a temp directory to avoid tar reading files that are being written
+          STAGING_DIR="/tmp/release-artifacts-staging"
+          rm -rf "$STAGING_DIR"
+          mkdir -p "$STAGING_DIR"
+          cp -a release-artifacts/. "$STAGING_DIR/"
+          tar -czf release-artifacts/db-migrations-${{ github.sha }}.tar.gz -C "$STAGING_DIR" .
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
