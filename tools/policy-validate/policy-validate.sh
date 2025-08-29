@@ -47,6 +47,12 @@ log_message() {
 }
 
 # Check if required tools are available
+
+# Policy-driven settings
+FILENAME_PATTERN=""
+REQUIRED_FIELDS=()
+VALID_RISK_LEVELS=()
+VALID_CHANGE_TYPES=()
 check_dependencies() {
     if ! command -v yq &> /dev/null; then
         log_message "yq command not found. Please install yq to parse YAML files." "ERROR"
@@ -59,17 +65,32 @@ check_dependencies() {
     fi
 }
 
+# Load policy values (filename pattern, required fields, risk levels, change types)
+load_policy() {
+    FILENAME_PATTERN=$(yq -r '.naming.filename_pattern // "^V[0-9]{3}__.+\\.sql$"' "$POLICY_PATH")
+    mapfile -t REQUIRED_FIELDS < <(yq -r '.metadata_requirements.required_fields[]' "$POLICY_PATH")
+    mapfile -t VALID_RISK_LEVELS < <(yq -r '.metadata_requirements.risk_levels[]' "$POLICY_PATH")
+    mapfile -t VALID_CHANGE_TYPES < <(yq -r '.metadata_requirements.change_types[]' "$POLICY_PATH")
+
+    # Basic fallbacks if policy sections are missing
+    if [[ ${#REQUIRED_FIELDS[@]} -eq 0 ]]; then
+        REQUIRED_FIELDS=("change_id" "title" "ticket" "risk" "change_type" "backward_compatible" "owner" "rollout_plan" "rollback_plan")
+    fi
+    if [[ ${#VALID_RISK_LEVELS[@]} -eq 0 ]]; then
+        VALID_RISK_LEVELS=("low" "medium" "high")
+    fi
+    if [[ ${#VALID_CHANGE_TYPES[@]} -eq 0 ]]; then
+        VALID_CHANGE_TYPES=("additive" "modification" "deprecation" "removal")
+    fi
+
+    log_message "Using filename pattern from policy: $FILENAME_PATTERN"
+}
 # Test YAML header exists
 test_yaml_header() {
     local content="$1"
     local filename="$2"
-    
-    ((VALIDATIONS_RUN++))
-    
-    if ! echo "$content" | grep -Pzo '(?s)/\*---.*?---\*/' > /dev/null; then
-        log_message "Missing required YAML metadata header in $filename" "ERROR"
-        return 1
-    fi
+    # Check required fields from policy
+    for field in "${REQUIRED_FIELDS[@]}"; do
     
     log_message "YAML metadata header found in $filename" "SUCCESS"
     return 0
@@ -83,7 +104,7 @@ get_yaml_metadata() {
 
 # Test required metadata fields
 test_required_fields() {
-    local yaml_content="$1"
+        for valid in "${VALID_RISK_LEVELS[@]}"; do
     local filename="$2"
     
     local required_fields=("change_id" "title" "ticket" "risk" "change_type" "backward_compatible" "owner" "rollout_plan" "rollback_plan")
@@ -91,7 +112,7 @@ test_required_fields() {
     local valid_change_types=("additive" "modification" "deprecation" "removal")
     
     # Check required fields
-    for field in "${required_fields[@]}"; do
+            log_message "Invalid risk level '$risk_level' in $filename. Must be one of: ${VALID_RISK_LEVELS[*]}" "ERROR"
         ((VALIDATIONS_RUN++))
         if ! echo "$yaml_content" | grep -q "^$field\s*:"; then
             log_message "Missing required metadata field '$field' in $filename" "ERROR"
@@ -102,7 +123,7 @@ test_required_fields() {
     
     # Validate risk level
     ((VALIDATIONS_RUN++))
-    if echo "$yaml_content" | grep -q "^risk\s*:"; then
+        for valid in "${VALID_CHANGE_TYPES[@]}"; do
         local risk_level=$(echo "$yaml_content" | grep "^risk\s*:" | sed 's/^risk\s*:\s*//' | tr -d ' ')
         local valid_risk=false
         for valid in "${valid_risk_levels[@]}"; do
@@ -110,7 +131,7 @@ test_required_fields() {
                 valid_risk=true
                 break
             fi
-        done
+            log_message "Invalid change type '$change_type' in $filename. Must be one of: ${VALID_CHANGE_TYPES[*]}" "ERROR"
         
         if [[ "$valid_risk" == "false" ]]; then
             log_message "Invalid risk level '$risk_level' in $filename. Must be one of: ${valid_risk_levels[*]}" "ERROR"
@@ -121,13 +142,13 @@ test_required_fields() {
     
     # Validate change type
     ((VALIDATIONS_RUN++))
-    if echo "$yaml_content" | grep -q "^change_type\s*:"; then
-        local change_type=$(echo "$yaml_content" | grep "^change_type\s*:" | sed 's/^change_type\s*:\s*//' | tr -d ' ')
-        local valid_type=false
-        for valid in "${valid_change_types[@]}"; do
-            if [[ "$change_type" == "$valid" ]]; then
-                valid_type=true
-                break
+    # Use policy-provided PCRE pattern with grep -P
+    if ! echo "$filename" | grep -Pq "$FILENAME_PATTERN"; then
+        log_message "Filename '$filename' does not match required pattern '$FILENAME_PATTERN'" "ERROR"
+        echo "ERROR: Filename validation failed for $filename (pattern: $FILENAME_PATTERN)" >&2
+    else
+        log_message "Filename '$filename' follows naming convention" "SUCCESS"
+    fi
             fi
         done
         
@@ -245,6 +266,8 @@ main() {
     fi
 
     log_message "Policy file loaded successfully"
+    # Load policy-driven values
+    load_policy
 
     # Get migration files
     local migration_files=()
