@@ -28,6 +28,10 @@ A production-ready template that enforces safe, backward-compatible database cha
    cd tools\policy-validate
    .\policy-validate.ps1      # Check policy compliance
    ```
+   On macOS/Linux you can also run the Bash version:
+   ```bash
+   ./policy-validate.sh
+   ```
 
 4. **Stop Environment**
    ```bash
@@ -106,13 +110,15 @@ db-change-safety-starter/
 │   ├── init-db.ps1              # Database initialization
 │   ├── cleanup.ps1              # Environment cleanup
 │   ├── status.ps1               # Quick status check
-│   └── *.md                     # Troubleshooting guides
+│   ├── docs/                    # Environment docs
+│   ├── monitoring/              # Prometheus + Grafana config
+│   └── troubleshooting/         # SQL Server troubleshooting scripts
 ├── flyway/                      # Flyway configuration
 │   ├── flyway.conf              # Shared settings
 │   ├── conf.dev.conf            # Development config
 │   ├── conf.ci.conf             # CI/CD config
 │   └── conf.prod.conf.example   # Production template
-├── migrations/                  # Database migrations
+├── migrations/                  # Database migrations (versioned + repeatable)
 │   ├── V001__init_schema.sql
 │   ├── V002__seed_reference_data.sql
 │   ├── V003__add_orders_status.sql
@@ -121,9 +127,9 @@ db-change-safety-starter/
 │   ├── migration-policy.yml     # Policy rules
 │   └── banned-patterns.txt      # Forbidden patterns
 ├── tools/                       # Validation and testing tools
-│   ├── policy-validate/         # Policy enforcement
-│   ├── smoke-test/              # Database health validation
-│   └── release-notes/           # Automated documentation
+│   ├── policy-validate/         # Policy enforcement (PowerShell + Bash)
+│   ├── smoke-test/              # .NET smoke tests against the DB
+│   └── release-notes/           # Automated release notes generator (Node/TS)
 └── ops/                         # Operational procedures
     ├── rollout-checklist.md     # Pre-deployment validation
     └── rollback-playbook.md     # Emergency procedures
@@ -158,9 +164,14 @@ ALTER TABLE dbo.Orders ADD status NVARCHAR(32) NULL
 
 The included GitHub Actions workflows provide:
 
-- **Pull Request Validation** - Policy checks, dry-run validation, automated testing
-- **Release Management** - Release notes generation, artifact publishing
+- **Pull Request Validation** - Policy checks (PowerShell validator), optional dry-run SQL (if licensed), automated smoke tests
+- **Release Management** - Release notes generation (optional, requires DB connection), artifact packaging and publishing, GitHub Release on tags
 - **Deployment Automation** - Structured rollout with safety controls
+
+Notes:
+- The PR validator uses the PowerShell script `tools/policy-validate/policy-validate.ps1` in CI for consistency with local runs.
+- Flyway dry-run SQL preview is a Teams+ feature; set `FLYWAY_LICENSE_KEY` in repo secrets to enable it.
+- Release notes generation requires a database connection string secret `RELEASE_NOTES_DB_CONN`. If not set, the release will still be created on tags but without attached notes.
 
 ### Safety Features
 
