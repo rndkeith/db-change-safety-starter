@@ -5,7 +5,10 @@
   "type": "module",
   "main": "generate-release-notes.ts",
   "scripts": {
-    "gen": "tsx generate-release-notes.ts",
+    "gen": "node --no-warnings gen-secure.mjs",
+    "gen-direct": "tsx generate-release-notes.ts",
+    "gen-safe": "tsx generate-release-notes-improved.ts",
+    "check-db": "tsx check-db-state.ts",
     "dev": "tsx watch generate-release-notes.ts",
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -31,8 +34,7 @@
     "tsx": "^4.6.2",
     "typescript": "^5.3.3",
     "@types/node": "^20.10.5",
-    "@types/mssql": "^9.1.5",
-    "@types/handlebars": "^4.1.0"
+    "@types/mssql": "^9.1.5"
   },
   "engines": {
     "node": ">=18.0.0"
