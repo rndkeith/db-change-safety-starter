@@ -6,20 +6,24 @@
 {{#if fromVersion}}**From Version:** {{fromVersion}}{{/if}}
 {{#if toVersion}}**To Version:** {{toVersion}}{{/if}}
 
+{{#if isFirstDeployment}}
+> [FIRST DEPLOYMENT NOTICE]: This is the initial deployment to this environment. Release notes generated from migration files since no previous deployment history exists.
+{{/if}}
+
 ---
 
-## 📊 Release Summary
+## Release Summary
 
 **Total Changes:** {{summary.totalChanges}}
 
 ### By Change Type
 {{#each summary.byChangeType}}
-- {{changeTypeIcon @key}} **{{capitalize @key}}:** {{this}}
+- [{{capitalize @key}}]: {{this}}
 {{/each}}
 
-### By Risk Level  
+### By Risk Level
 {{#each summary.byRisk}}
-- {{riskColor @key}} **{{capitalize @key}} Risk:** {{this}}
+- [{{capitalize @key}} Risk]: {{this}}
 {{/each}}
 
 ---
@@ -27,22 +31,32 @@
 ## 📋 Migration Details
 
 {{#each items}}
-### {{changeTypeIcon change_type}} {{version}} — {{title}}
+### {{change_id}} - {{title}}
 
-**📋 Details:**
+**Details:**
+- **Change ID:** {{change_id}}
 - **Ticket:** {{ticket}}
 - **Change Type:** {{capitalize change_type}}
 - **Risk Level:** {{riskColor risk}} {{capitalize risk}}
 - **Owner:** {{owner}}
+-- **Backward Compatible:** {{#if backward_compatible}}Yes{{else}}{{#if (eq backward_compatible false)}}No{{else}}Unknown{{/if}}{{/if}}
+-- **Requires Backfill:** {{#if requires_backfill}}Yes{{else}}{{#if (eq requires_backfill false)}}No{{else}}Unknown{{/if}}{{/if}}
+{{#if reviewers}}
+- **Reviewers:** {{#each reviewers}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}
+{{/if}}
+{{#unless ../isFirstDeployment}}
 - **Deployed:** {{formatDate installed_on}}
+{{else}}
+- **Scheduled for deployment:** Initial deployment
+{{/unless}}
 
 {{#if rollout_plan}}
-**📋 Rollout Plan:**
+**Rollout Plan:**
 > {{rollout_plan}}
 {{/if}}
 
 {{#if rollback_plan}}
-**🔄 Rollback Plan:**
+**Rollback Plan:**
 > {{rollback_plan}}
 {{/if}}
 
@@ -50,7 +64,17 @@
 
 {{/each}}
 
-## 🛡️ Safety Information
+## Safety Information
+
+{{#if isFirstDeployment}}
+### First Deployment Checklist
+This is the initial deployment to this environment. Ensure:
+- [ ] Database backup strategy is in place
+- [ ] All required database users and permissions are configured
+- [ ] Connection pooling and timeout settings are appropriate
+- [ ] Monitoring and alerting are configured
+- [ ] Rollback procedures are understood and tested
+{{/if}}
 
 ### Rollback Procedures
 If any issues are encountered after deployment:
@@ -60,10 +84,10 @@ If any issues are encountered after deployment:
    - Review error logs for database-related issues
    - Verify critical business processes are functioning
 
-2. **Rollback Decision Matrix:**
-   - **🟢 Low Risk Changes:** Monitor for 24 hours, rollback if issues detected
-   - **🟡 Medium Risk Changes:** Monitor for 48 hours, have rollback plan ready
-   - **🔴 High Risk Changes:** Monitor continuously for 72 hours, immediate rollback capability required
+2. Rollback Decision Matrix:
+   - [High Risk Changes]: Monitor continuously for 72 hours, immediate rollback capability required
+   - [Medium Risk Changes]: Monitor for 48 hours, have rollback plan ready
+   - [Low Risk Changes]: Monitor for 24 hours, rollback if issues detected
 
 3. **Rollback Process:**
    - Follow individual rollback plans listed above
@@ -79,21 +103,46 @@ After deployment, verify:
 - [ ] Smoke tests passing
 - [ ] Business metrics within expected ranges
 
+{{#if isFirstDeployment}}
+### Post-First-Deployment Tasks
+- [ ] Verify flyway_schema_history table was created successfully
+- [ ] Confirm all migrations applied in correct order
+- [ ] Validate database schema matches expected state
+- [ ] Test application functionality end-to-end
+- [ ] Update monitoring dashboards with baseline metrics
+{{/if}}
+
+### Compatibility & Backfill Information
+{{#each items}}
+{{#if requires_backfill}}
+- **{{change_id}}** requires data backfill - ensure backfill scripts are ready
+{{/if}}
+{{#if (eq backward_compatible false)}}
+- **{{change_id}}** is NOT backward compatible - coordinate deployment timing
+{{/if}}
+{{/each}}
+
 ### Emergency Contacts
-- **On-Call DBA:** [Insert contact information]
-- **DevOps Team:** [Insert contact information]  
-- **Product Owner:** [Insert contact information]
+- On-Call DBA: [Insert contact information]
+- DevOps Team: [Insert contact information]
+- Product Owner: [Insert contact information]
 
 ---
 
-## 📝 Notes
+## Notes
 
+{{#if isFirstDeployment}}
+- **First deployment**: All migrations listed will be applied in sequence
+- Database will be initialized with complete schema
+- Estimated total deployment time: [Insert estimate for full migration set]
+{{else}}
 - All migrations have been tested in staging environment
 - Database backup taken before deployment: [Insert backup reference]
 - Estimated deployment time: [Insert estimate]
+{{/if}}
 - Expected downtime: [Insert downtime estimate or "Zero downtime"]
 
 **For detailed technical information, refer to individual migration files in the `migrations/` directory.**
 
 ---
-*This document was automatically generated from database migration metadata and Flyway schema history.*
+*This document was automatically generated from {{#if isFirstDeployment}}migration file metadata{{else}}database migration metadata and Flyway schema history{{/if}}.*

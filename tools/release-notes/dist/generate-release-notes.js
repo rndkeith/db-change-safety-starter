@@ -17,16 +17,41 @@ class ReleaseNotesGenerator {
         this.migrationsPath = path.resolve(__dirname, migrationsPath);
         this.outputPath = outputPath;
     }
+    maskConnectionString(connectionString) {
+        // Mask passwords and sensitive parts of connection string
+        return connectionString
+            .replace(/password=([^;]+)/gi, 'password=***')
+            .replace(/pwd=([^;]+)/gi, 'pwd=***')
+            .replace(/user id=([^;]+)/gi, 'user id=***')
+            .replace(/uid=([^;]+)/gi, 'uid=***')
+            .replace(/authentication=([^;]+)/gi, 'authentication=***')
+            .replace(/:([^@:]+)@/g, ':***@') // For URLs like server:password@host
+            .replace(/\/\/([^:]+):([^@]+)@/g, '//$1:***@'); // For connection URLs
+    }
     async generate(fromVersion, toVersion) {
         console.log('Connecting to database...');
+        // Mask connection string for logging security
+        const maskedConnection = this.maskConnectionString(this.connectionString);
+        console.log(`Connection: ${maskedConnection}`);
         const pool = await sql.connect(this.connectionString);
         try {
-            console.log('Fetching migration history...');
-            const migrations = await this.fetchMigrationHistory(pool, fromVersion, toVersion);
-            console.log('Reading migration files for metadata...');
-            const enrichedMigrations = await this.enrichWithMetadata(migrations);
+            // Check if flyway_schema_history table exists
+            const tableExists = await this.checkSchemaHistoryTableExists(pool);
+            let migrations = [];
+            let isFirstDeployment = false;
+            if (tableExists) {
+                console.log('Fetching migration history from database...');
+                const dbMigrations = await this.fetchMigrationHistory(pool, fromVersion, toVersion);
+                migrations = await this.enrichWithMetadata(dbMigrations);
+            }
+            else {
+                console.log('flyway_schema_history table not found - this appears to be a first deployment');
+                console.log('Generating release notes from migration files...');
+                isFirstDeployment = true;
+                migrations = await this.generateFromMigrationFiles(fromVersion, toVersion);
+            }
             console.log('Generating release notes...');
-            const releaseNotes = await this.generateReleaseNotes(enrichedMigrations, fromVersion, toVersion);
+            const releaseNotes = await this.generateReleaseNotes(migrations, fromVersion, toVersion, isFirstDeployment);
             console.log('Writing release notes to file...');
             await this.writeReleaseNotes(releaseNotes);
             console.log('Release notes generated successfully!');
@@ -34,6 +59,82 @@ class ReleaseNotesGenerator {
         finally {
             await pool.close();
         }
+    }
+    async checkSchemaHistoryTableExists(pool) {
+        try {
+            const request = pool.request();
+            const result = await request.query(`
+        SELECT COUNT(*) as table_count 
+        FROM INFORMATION_SCHEMA.TABLES 
+        WHERE TABLE_NAME = 'flyway_schema_history'
+      `);
+            return result.recordset[0].table_count > 0;
+        }
+        catch (error) {
+            console.warn('Error checking for flyway_schema_history table:', error);
+            return false;
+        }
+    }
+    async generateFromMigrationFiles(fromVersion, toVersion) {
+        const migrationFiles = await this.getAllMigrationFiles();
+        const migrations = [];
+        for (const filePath of migrationFiles) {
+            const fileName = path.basename(filePath);
+            const versionMatch = fileName.match(/^V(\d+(?:\.\d+)*(?:\.\d+)*(?:\.\d+)*)__(.+)\.sql$/);
+            if (!versionMatch)
+                continue;
+            const version = versionMatch[1];
+            const rawTitle = versionMatch[2].replace(/_/g, ' ');
+            // Apply version filtering if specified
+            if (fromVersion && this.compareVersions(version, fromVersion) <= 0)
+                continue;
+            if (toVersion && this.compareVersions(version, toVersion) > 0)
+                continue;
+            const metadata = await this.extractMetadata(filePath);
+            migrations.push({
+                version,
+                change_id: metadata.change_id || version,
+                title: metadata.title || rawTitle || 'No title',
+                ticket: metadata.ticket || 'N/A',
+                change_type: metadata.change_type || 'unspecified',
+                risk: metadata.risk || 'unknown',
+                owner: metadata.owner || 'unknown',
+                installed_on: new Date().toISOString(), // Use current time for first deployment
+                description: rawTitle,
+                rollout_plan: metadata.rollout_plan,
+                rollback_plan: metadata.rollback_plan,
+                backward_compatible: metadata.backward_compatible,
+                requires_backfill: metadata.requires_backfill,
+                reviewers: metadata.reviewers
+            });
+        }
+        // Sort by version (assuming semantic versioning)
+        migrations.sort((a, b) => this.compareVersions(b.version, a.version));
+        return migrations;
+    }
+    async getAllMigrationFiles() {
+        try {
+            const pattern = path.join(this.migrationsPath, 'V*.sql');
+            return await globby(pattern);
+        }
+        catch (error) {
+            console.warn('Could not find migration files:', error);
+            return [];
+        }
+    }
+    compareVersions(version1, version2) {
+        const v1Parts = version1.split('.').map(Number);
+        const v2Parts = version2.split('.').map(Number);
+        const maxLength = Math.max(v1Parts.length, v2Parts.length);
+        for (let i = 0; i < maxLength; i++) {
+            const v1Part = v1Parts[i] || 0;
+            const v2Part = v2Parts[i] || 0;
+            if (v1Part > v2Part)
+                return 1;
+            if (v1Part < v2Part)
+                return -1;
+        }
+        return 0;
     }
     async fetchMigrationHistory(pool, fromVersion, toVersion) {
         let query = `
@@ -73,6 +174,7 @@ class ReleaseNotesGenerator {
             }
             enrichedMigrations.push({
                 version: migration.version,
+                change_id: metadata.change_id || migration.version,
                 title: metadata.title || migration.description || 'No title',
                 ticket: metadata.ticket || 'N/A',
                 change_type: metadata.change_type || 'unspecified',
@@ -81,14 +183,17 @@ class ReleaseNotesGenerator {
                 installed_on: migration.installed_on.toISOString(),
                 description: migration.description,
                 rollout_plan: metadata.rollout_plan,
-                rollback_plan: metadata.rollback_plan
+                rollback_plan: metadata.rollback_plan,
+                backward_compatible: metadata.backward_compatible,
+                requires_backfill: metadata.requires_backfill,
+                reviewers: metadata.reviewers
             });
         }
         return enrichedMigrations;
     }
     async findMigrationFile(version) {
         try {
-            const pattern = path.join(this.migrationsPath, `${version}__*.sql`);
+            const pattern = path.join(this.migrationsPath, `V${version}__*.sql`);
             const files = await globby(pattern);
             return files.length > 0 ? files[0] : null;
         }
@@ -113,12 +218,29 @@ class ReleaseNotesGenerator {
                 if (match) {
                     const key = match[1].trim();
                     let value = match[2].trim();
-                    // Remove quotes if present
-                    if ((value.startsWith('"') && value.endsWith('"')) ||
-                        (value.startsWith("'") && value.endsWith("'"))) {
-                        value = value.slice(1, -1);
+                    // Handle boolean values
+                    if (value === 'true' || value === 'false') {
+                        metadata[key] = value === 'true';
                     }
-                    metadata[key] = value;
+                    // Handle arrays (e.g., reviewers)
+                    else if (value.startsWith('[') && value.endsWith(']')) {
+                        try {
+                            metadata[key] = JSON.parse(value);
+                        }
+                        catch (e) {
+                            // Fallback to string if JSON parsing fails
+                            metadata[key] = value;
+                        }
+                    }
+                    // Handle quoted strings
+                    else if ((value.startsWith('"') && value.endsWith('"')) ||
+                        (value.startsWith("'") && value.endsWith("'"))) {
+                        metadata[key] = value.slice(1, -1);
+                    }
+                    // Handle unquoted strings
+                    else {
+                        metadata[key] = value;
+                    }
                 }
             }
             return metadata;
@@ -128,7 +250,7 @@ class ReleaseNotesGenerator {
             return {};
         }
     }
-    async generateReleaseNotes(migrations, fromVersion, toVersion) {
+    async generateReleaseNotes(migrations, fromVersion, toVersion, isFirstDeployment = false) {
         const templatePath = path.join(__dirname, 'templates', 'notes.md.hbs');
         const templateContent = await fs.readFile(templatePath, 'utf8');
         const template = Handlebars.compile(templateContent);
@@ -144,6 +266,7 @@ class ReleaseNotesGenerator {
             fromVersion,
             toVersion,
             environment: process.env.NODE_ENV || 'production',
+            isFirstDeployment,
             summary,
             items: migrations
         };
@@ -157,12 +280,12 @@ class ReleaseNotesGenerator {
         }, {});
     }
     async writeReleaseNotes(content) {
-        const timestamp = dayjs().format('YYYY-MM-DD');
-        const filename = `release-notes-${timestamp}.md`;
+        const runId = process.env.GITHUB_RUN_ID || dayjs().format('YYYYMMDD-HHmmss');
+        const filename = `REL_${runId}.md`;
         const fullPath = path.join(this.outputPath, filename);
         await fs.writeFile(fullPath, content, 'utf8');
         console.log(`Release notes written to: ${fullPath}`);
-        // Also write to a standard filename for CI/CD systems
+        // Also write to a standard filename for fallback
         const standardPath = path.join(this.outputPath, 'RELEASE_NOTES.md');
         await fs.writeFile(standardPath, content, 'utf8');
         console.log(`Release notes also written to: ${standardPath}`);
@@ -177,20 +300,23 @@ Handlebars.registerHelper('capitalize', (str) => {
 });
 Handlebars.registerHelper('riskColor', (risk) => {
     switch (risk.toLowerCase()) {
-        case 'high': return 'HIGH';
-        case 'medium': return 'MEDIUM';
-        case 'low': return 'LOW';
-        default: return 'UNKNOWN';
+        case 'high': return '[HIGH]';
+        case 'medium': return '[MEDIUM]';
+        case 'low': return '[LOW]';
+        default: return '[UNKNOWN]';
     }
 });
 Handlebars.registerHelper('changeTypeIcon', (changeType) => {
     switch (changeType.toLowerCase()) {
-        case 'additive': return 'ADD';
-        case 'modification': return 'MODIFICATION';
-        case 'deprecation': return 'DEPRECATION';
-        case 'removal': return 'REMOVAL';
-        default: return 'NOTE';
+        case 'additive': return '[Add]';
+        case 'modification': return '[Mod]';
+        case 'deprecation': return '[Deprecate]';
+        case 'removal': return '[Remove]';
+        default: return '[Change]';
     }
+});
+Handlebars.registerHelper('eq', (a, b) => {
+    return a === b;
 });
 // CLI setup
 const program = new Command();
@@ -212,6 +338,17 @@ async function main() {
         console.error('   Use --connection flag or set RELEASE_NOTES_CONN environment variable.');
         process.exit(1);
     }
+    // Never log the actual connection string - mask sensitive parts
+    const maskedConnection = options.connection
+        .replace(/password=([^;]+)/gi, 'password=***')
+        .replace(/pwd=([^;]+)/gi, 'pwd=***')
+        .replace(/user id=([^;]+)/gi, 'user id=***')
+        .replace(/uid=([^;]+)/gi, 'uid=***')
+        .replace(/authentication=([^;]+)/gi, 'authentication=***')
+        .replace(/:([^@:]+)@/g, ':***@')
+        .replace(/\/\/([^:]+):([^@]+)@/g, '//$1:***@');
+    console.log('Starting release notes generation...');
+    console.log(`Database: ${maskedConnection}`);
     try {
         const generator = new ReleaseNotesGenerator(options.connection, options.migrations, options.output);
         if (options.dryRun) {
@@ -222,6 +359,10 @@ async function main() {
     }
     catch (error) {
         console.error('Error generating release notes:', error);
+        // Make sure we don't log connection strings in error messages
+        if (error instanceof Error && error.message.includes('connection')) {
+            console.error('   Check your database connection and credentials.');
+        }
         process.exit(1);
     }
 }
