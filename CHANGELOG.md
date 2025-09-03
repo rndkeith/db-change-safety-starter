@@ -1,9 +1,15 @@
 # Changelog
 
-## [0.1.0] - 2025-09-03
+## [1.0.0] - 2025-08-29
 ### Added
-- Initial starter kit with Flyway-based checks
-- Guardrails for destructive changes (DROP, type shrink, NOT NULL w/o default, UPDATE/DELETE w/o WHERE)
-- GitHub Action workflow for CI integration
+- Initial release of db-change-safety-starter
+- Flyway integration with migration checks in CI/CD
+- Guardrails for destructive changes:
+  - DROP TABLE / DROP COLUMN
+  - Type shrink detection
+  - NOT NULL without DEFAULT/backfill
+  - UPDATE/DELETE without WHERE
+  - Index creation warnings
+- GitHub Actions workflow for automated checks
 - Example migrations and diffs
-- README with quick start instructions
+- README with quick start and safety model

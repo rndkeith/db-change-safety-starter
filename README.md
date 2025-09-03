@@ -1,7 +1,8 @@
 # Database Change Safety Starter
-[![DB Migration CI](https://github.com/rndkeith/db-change-safety-starter/actions/workflows/ci.yml/badge.svg)](https://github.com/rndkeith/db-change-safety-starter/actions/workflows/ci.yml)
-[![Promote Release](https://github.com/rndkeith/db-change-safety-starter/actions/workflows/promote.yml/badge.svg)](https://github.com/rndkeith/db-change-safety-starter/actions/workflows/promote.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+[![GitHub release](https://img.shields.io/github/v/release/rndkeith/db-change-safety-starter)](https://github.com/rndkeith/db-change-safety-starter/releases)
+[![Build status](https://github.com/rndkeith/db-change-safety-starter/actions/workflows/ci.yml/badge.svg)](https://github.com/rndkeith/db-change-safety-starter/actions)
+[![License](https://img.shields.io/github/license/rndkeith/db-change-safety-starter)](https://github.com/rndkeith/db-change-safety-starter/blob/main/LICENSE)
 ![main](https://img.shields.io/github/last-commit/rndkeith/db-change-safety-starter/main)
 
 A production-ready template that enforces safe, backward-compatible database changes using Flyway, policy validation, and automated testing.
