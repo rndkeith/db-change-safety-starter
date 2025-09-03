@@ -1,6 +1,20 @@
 # Database Change Safety Starter
 
+[![GitHub release](https://img.shields.io/github/v/release/rndkeith/db-change-safety-starter)](https://github.com/rndkeith/db-change-safety-starter/releases)
+[![Build status](https://github.com/rndkeith/db-change-safety-starter/actions/workflows/ci.yml/badge.svg)](https://github.com/rndkeith/db-change-safety-starter/actions)
+[![License](https://img.shields.io/github/license/rndkeith/db-change-safety-starter)](https://github.com/rndkeith/db-change-safety-starter/blob/main/LICENSE)
+![main](https://img.shields.io/github/last-commit/rndkeith/db-change-safety-starter/main)
+
 A production-ready template that enforces safe, backward-compatible database changes using Flyway, policy validation, and automated testing.
+
+## Why this project
+
+Database migrations can be risky. This repo shows how to add checks and guardrails with Flyway.
+
+**Who should use this:** Any engineering team that wants guardrails in CI/CD to catch risky schema changes before they hit production.
+
+👉 I also wrote about the thinking behind this project and why release safety is an engineering leadership problem:
+[The Hidden Dangers in Database Migrations (and How to Stop Them)](https://medium.com/@douglas.keith.williams/the-hidden-dangers-in-database-migrations-and-how-to-stop-them-e98917b82c08)
 
 ## 🚀 Quick Start
 
