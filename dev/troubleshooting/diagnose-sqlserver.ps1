@@ -15,20 +15,10 @@ param(
 
 $ErrorActionPreference = "Continue"
 
-function Write-DiagnosticMessage {
-    param([string]$Message, [string]$Level = "INFO")
-    
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $color = switch ($Level) {
-        "ERROR" { "Red" }
-        "WARN" { "Yellow" }
-        "SUCCESS" { "Green" }
-        "DETAIL" { "Gray" }
-        default { "Cyan" }
-    }
-    
-    Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
-}
+$modulePath = Join-Path $PSScriptRoot 'common.psm1'
+Import-Module $modulePath -Force
+
+function Write-DiagnosticMessage { param([string]$Message, [string]$Level = "INFO"); Write-Log $Message $Level }
 
 function Test-DockerEnvironment {
     Write-DiagnosticMessage "=== Docker Environment Check ===" "INFO"
@@ -231,14 +221,10 @@ try {
     Test-PortAvailability
     Test-ContainerStatus
     
-    # Attempt auto-fix if requested
+    # Attempt quick fix if requested
     if ($Fix) {
-        $fixResult = Invoke-AutoFix
-        if ($fixResult) {
-            Write-DiagnosticMessage "Auto-fix completed successfully!" "SUCCESS"
-        } else {
-            Write-DiagnosticMessage "Auto-fix failed. Manual intervention required." "ERROR"
-        }
+        Write-DiagnosticMessage "Running quick-fix..." 'INFO'
+        & (Join-Path $PSScriptRoot 'quick-fix.ps1') -WaitSeconds 60 | Out-Null
     }
     
     # Test connection if container seems to be running

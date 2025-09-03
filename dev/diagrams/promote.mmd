@@ -1,0 +1,48 @@
+flowchart TB
+  %% Triggers
+  A[[Push event]] --> B{Ref type?}
+  B -- "refs/tags/v*" --> T[Tag push]
+  B -- "refs/heads/main" --> M[Main branch push]
+
+  %% Shared job
+  subgraph Job["build-release-artifacts (ubuntu-latest)"]
+    direction TB
+    C["Checkout code<br />(fetch-depth: 0)"]
+    D[Setup Node.js 20]
+    E[Install release-notes deps<br />cd tools/release-notes && npm ci]
+  end
+
+  %% Release notes generation gate (both refs can attempt if env present)
+  T --> C
+  M --> C
+  C --> D --> E --> F{Has RELEASE_NOTES_DB_CONN env?}
+
+  %% Generate notes (happy path)
+  F -- "yes" --> G[Generate release notes<br />npm run gen]
+  G --> H{gen succeeded?}
+
+  H -- "yes" --> I["Set RELEASE_NOTES_GENERATED=true"]
+  I --> J["notes_path = tools/release-notes/REL_${{ github.run_id }}.md"]
+
+  %% Fallback (first deployment / no schema history)
+  H -- "no" --> K["Create fallback notes file<br />REL_${{ github.run_id }}.md"]
+  K --> L["Set RELEASE_NOTES_GENERATED=false → true<br />(after fallback)"]
+  L --> J
+
+  %% No connection string: skip notes
+  F -- "no" --> S["Skip notes generation"]
+  S --> J2["notes_path empty<br />(has_notes=false)"]
+
+  %% Package artifacts
+  J --> P["Create migration artifact<br />migrations/ flyway/ policy/ (+ notes if present)"]
+  J2 --> P
+  P --> Q["Stage & tar.gz → release-artifacts/db-migrations-${{ github.sha }}.tar.gz"]
+  Q --> R["Upload artifact<br />migration-package-${{ github.sha }} (retention: 90d)"]
+
+  %% Releases (tag-only)
+  T --> U{has_notes?}
+  U -- "true" --> V["Create GitHub Release (with notes)<br />release_name: Database Migration ${{ github.ref_name }}<br />body_path: notes_path"]
+  U -- "false" --> W["Create GitHub Release (no notes)<br />release_name: Database Migration ${{ github.ref_name }}<br />body: explanatory text"]
+
+  %% Main branch notification
+  M --> N[Notify deployment ready<br />prints artifact name, SHA, RELEASE_NOTES_GENERATED]

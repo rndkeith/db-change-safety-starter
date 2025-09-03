@@ -11,8 +11,8 @@ In our `docker-compose.yml`, the health check is:
 ```yaml
 healthcheck:
   test: [
-    "CMD-SHELL", 
-    "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'DevPassword123!' -Q 'SELECT 1' -b -o /dev/null"
+    "CMD-SHELL",
+    "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'DevPassword123!' -C -Q 'SELECT 1' -b -o /dev/null"
   ]
   interval: 30s      # Run check every 30 seconds
   timeout: 10s       # Wait up to 10 seconds for response
@@ -136,7 +136,7 @@ docker inspect db-dev-sqlserver | jq '.[0].State.Health.Log'
 ### Manual Health Check
 ```bash
 # Run the same command Docker runs
-docker exec db-dev-sqlserver /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P DevPassword123! -Q "SELECT 1"
+docker exec db-dev-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P DevPassword123! -C -Q "SELECT 1"
 
 # Check exit code
 echo $? # Should be 0 for success

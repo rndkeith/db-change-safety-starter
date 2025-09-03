@@ -1,0 +1,56 @@
+flowchart LR
+  subgraph Net["db-dev-network (bridge)"]
+    SQL[(sqlserver<br/>mssql/server:2022)]
+    FLY[flyway/flyway:10-alpine]
+    RED[(redis:7-alpine)]
+    PROM[(prom/prometheus:latest)]
+    GRAF[(grafana/grafana:latest)]
+    EXP[awaragi/prometheus-mssql-exporter]
+  end
+
+  %% Volumes
+  classDef vol fill:#f6f6f6,stroke:#bbb,stroke-dasharray: 3 3,color:#555
+  VSQL[(volume: sqlserver_data)]:::vol
+  VRED[(volume: redis_data)]:::vol
+  VPROM[(volume: prometheus_data)]:::vol
+  VGRAF[(volume: grafana_data)]:::vol
+
+  %% Host-exposed ports
+  classDef ext fill:#eef9ff,stroke:#66a3d2,color:#336
+  P1433[[Host :1433]]:::ext
+  P6379[[Host :6379]]:::ext
+  P9090[[Host :9090]]:::ext
+  P3000[[Host :3000]]:::ext
+  P4000[[Host :4000]]:::ext
+
+  %% Wiring
+  SQL --- VSQL
+  RED --- VRED
+  PROM --- VPROM
+  GRAF --- VGRAF
+
+  SQL <-->|TDS| P1433
+  RED <-->|TCP| P6379
+  PROM <-->|HTTP| P9090
+  GRAF <-->|HTTP| P3000
+  EXP  <-->|HTTP| P4000
+
+  %% Relationships
+  FLY -- waits for SQL (health) --> SQL
+  FLY -- JDBC migrate/info --> SQL
+  EXP -- scrape metrics --> SQL
+  PROM -- scrape --> EXP
+  GRAF -- query --> PROM
+
+  %% Profile coloring (optional)
+  classDef base fill:#fff,stroke:#333,color:#111
+  classDef mig fill:#eef7ee,stroke:#6aa56a
+  classDef mon fill:#fff7e6,stroke:#d79a32
+  classDef cache fill:#f3eaff,stroke:#8b6ac9
+
+  class SQL base
+  class FLY mig
+  class RED cache
+  class PROM mon
+  class GRAF mon
+  class EXP mon
