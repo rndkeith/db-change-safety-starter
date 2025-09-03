@@ -44,10 +44,10 @@ docker compose up -d sqlserver
 **Common issues:**
 - **SSL Certificate Error**: Fixed with `-C` parameter in health check
 - Container needs 2-3 minutes to fully start
-- Requires 4GB+ RAM in Docker Desktop
+- Requires 4GB+ RAM. On Windows with WSL 2, set memory in `%UserProfile%\\.wslconfig` (Docker sliders don’t apply). See SQL Server Troubleshooting for details.
 - Port 1433 might be in use by another service
 
-See `SSL_CERTIFICATE_FIX.md` and `SQL_SERVER_TROUBLESHOOTING.md` for complete guides.
+See `SQL_SERVER_TROUBLESHOOTING.md` (includes SSL fix) for complete guidance.
 
 ---
 
@@ -63,13 +63,12 @@ docker compose up -d
 docker compose --profile migration up -d          # Include Flyway
 docker compose --profile cache up -d              # Include Redis  
 docker compose --profile monitoring up -d         # Include Prometheus + Grafana
-docker compose --profile gui up -d                # Include Azure Data Studio
 
 # Multiple profiles
 docker compose --profile monitoring --profile cache up -d
 
 # All services
-docker compose --profile migration --profile cache --profile monitoring --profile gui up -d
+docker compose --profile migration --profile cache --profile monitoring up -d
 ```
 
 ## 🛑 Stopping Services Properly
@@ -97,7 +96,7 @@ docker compose down                              # Base services
 docker compose --profile migration down
 docker compose --profile cache down  
 docker compose --profile monitoring down
-docker compose --profile gui down
+ # (no GUI profile in compose)
 
 # Remove volumes (optional - removes all data!)
 docker compose down -v

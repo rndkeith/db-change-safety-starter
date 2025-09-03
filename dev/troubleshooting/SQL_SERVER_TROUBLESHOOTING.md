@@ -11,6 +11,36 @@ Run the diagnostic script first:
 
 ## 🚨 Common Issues and Solutions
 
+### SSL certificate error fix (ODBC Driver 18)
+
+If you see errors like:
+
+```
+Sqlcmd: Error: Microsoft ODBC Driver 18 for SQL Server : SSL Provider:
+[error:0A000086:SSL routines::certificate verify failed:self-signed certificate].
+Sqlcmd: Error: Microsoft ODBC Driver 18 for SQL Server : Client unable to establish connection.
+```
+
+Cause: ODBC Driver 18 enforces certificate validation by default and the SQL Server container uses a self-signed certificate.
+
+Fix: Trust the certificate with the -C flag (already applied in our health check) or use TrustServerCertificate=True in connection strings.
+
+Manual tests:
+
+```bash
+# Works (trust server cert)
+docker exec db-dev-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P DevPassword123! -C -Q "SELECT 1"
+
+# Fails without -C (kept for illustration)
+docker exec db-dev-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P DevPassword123! -Q "SELECT 1"
+```
+
+Connection string equivalent:
+
+```
+Server=localhost,1433;Initial Catalog=DevDB;User Id=sa;Password=DevPassword123!;TrustServerCertificate=True
+```
+
 ### Issue 1: Container starts but shows "unhealthy"
 
 **Symptoms:**
@@ -88,9 +118,24 @@ Run the diagnostic script first:
 
 **Solutions:**
 
-1. **Increase Docker Desktop memory**:
-   - Windows: Docker Desktop → Settings → Resources
-   - Set memory to 4GB minimum, 8GB recommended
+1. **Increase available memory**:
+   - Windows (WSL 2 backend): Configure memory in `%UserProfile%\.wslconfig` (Docker Desktop sliders are ignored with WSL 2)
+   - Windows (Hyper-V/legacy): Docker Desktop → Settings → Resources
+   - Recommended: 4GB minimum, 8GB preferred
+
+   Windows WSL 2 example (`%UserProfile%\.wslconfig`):
+   ```ini
+   [wsl2]
+   memory=6GB         # limit memory
+   processors=4       # limit CPU
+   swap=2GB           # optional swap size (set 0 to disable)
+   ```
+
+   Apply changes (PowerShell):
+   ```powershell
+   wsl.exe --shutdown   # stops all WSL distros, including docker-desktop
+   # then restart Docker Desktop
+   ```
 
 2. **Reduce SQL Server memory usage**:
    ```yaml
@@ -185,8 +230,8 @@ The improved health check configuration:
 ```yaml
 healthcheck:
   test: [
-    "CMD-SHELL", 
-    "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'DevPassword123!' -Q 'SELECT 1' -b -o /dev/null"
+   "CMD-SHELL",
+   "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'DevPassword123!' -C -Q 'SELECT 1' -b -o /dev/null"
   ]
   interval: 30s      # Check every 30 seconds
   timeout: 10s       # Wait 10 seconds for response

@@ -5,6 +5,7 @@
     
 .DESCRIPTION
     This script demonstrates the health check process and helps debug failures
+    Uses shared helpers from common.psm1 for consistent logging.
 #>
 
 param(
@@ -13,18 +14,11 @@ param(
     [int]$MonitorSeconds = 0
 )
 
-function Write-HealthMessage {
-    param([string]$Message, [string]$Level = "INFO")
-    $timestamp = Get-Date -Format "HH:mm:ss"
-    $color = switch ($Level) {
-        "ERROR" { "Red" }
-        "WARN" { "Yellow" }
-        "SUCCESS" { "Green" }
-        "DETAIL" { "Gray" }
-        default { "Cyan" }
-    }
-    Write-Host "[$timestamp] $Message" -ForegroundColor $color
-}
+# Import shared helpers
+$modulePath = Join-Path $PSScriptRoot 'common.psm1'
+Import-Module $modulePath -Force
+
+function Write-HealthMessage { param([string]$Message, [string]$Level = 'INFO'); Write-Log $Message $Level }
 
 function Get-ContainerHealthStatus {
     $status = docker inspect db-dev-sqlserver --format "{{.State.Health.Status}}" 2>$null
@@ -100,7 +94,7 @@ function Show-HealthCheckHistory {
     Write-HealthMessage "=== Health Check History ===" "INFO"
     
     try {
-        $healthData = docker inspect db-dev-sqlserver --format "{{json .State.Health}}" 2>$null | ConvertFrom-Json
+    $healthData = docker inspect db-dev-sqlserver --format "{{json .State.Health}}" 2>$null | ConvertFrom-Json
         
         if ($healthData) {
             Write-HealthMessage "Current Status: $($healthData.Status)" "INFO"
@@ -130,7 +124,7 @@ function Show-HealthCheckHistory {
     }
 }
 
-function Monitor-HealthStatus {
+function Show-HealthStatus {
     param([int]$Seconds)
     
     if ($Seconds -le 0) { return }
@@ -194,7 +188,7 @@ try {
     Show-HealthCheckHistory
     
     if ($MonitorSeconds -gt 0) {
-        Monitor-HealthStatus -Seconds $MonitorSeconds
+        Show-HealthStatus -Seconds $MonitorSeconds
     }
     
     if (-not $RunHealthCheck -and -not $ShowDetails -and $MonitorSeconds -eq 0) {

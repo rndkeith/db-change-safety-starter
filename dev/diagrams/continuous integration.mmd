@@ -1,0 +1,32 @@
+sequenceDiagram
+  autonumber
+  participant GH as GitHub (PR)
+  participant R as Runner (ubuntu-latest)
+  participant SQL as Service: MSSQL 2022
+  participant PV as Policy Validate (PowerShell)
+  participant FD as Flyway (Dry Run)
+  participant FM as Flyway (Migrate)
+  participant ST as Smoke Tests (.NET)
+  participant UA as Upload Artifact
+  participant PC as PR Comment (dry run)
+
+  GH->>R: Trigger workflow (paths: migrations/, policy/, tools/, .github/, flyway/)
+  R->>SQL: Start service container\n(healthcheck: sqlcmd SELECT 1)
+  R->>PV: ./tools/policy-validate/policy-validate.ps1
+  alt Flyway Teams+ license present
+    R->>FD: flyway -dryRunOutput migrate (continue-on-error)
+    FD-->>R: dryrun.sql (may exist)
+  else No license
+    Note over R: Skip dry run step
+  end
+  R->>FM: flyway migrate (actual) → tempdb
+  R->>ST: dotnet build & run smoke tests
+  ST-->>R: pass/fail
+
+  alt License & always()
+    R->>UA: upload dryrun.sql artifact
+  end
+
+  alt License & event == pull_request
+    R->>PC: Comment PR with dry run (or info message)
+  end

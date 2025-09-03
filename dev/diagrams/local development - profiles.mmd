@@ -1,0 +1,37 @@
+sequenceDiagram
+  autonumber
+  participant Dev as Developer
+  participant DC as docker compose
+  participant SQL as sqlserver
+  participant FLY as flyway (profile: migration)
+  participant RED as redis (profile: cache)
+  participant EXP as sqlserver-exporter (profile: monitoring)
+  participant PRO as prometheus (profile: monitoring)
+  participant GRA as grafana (profile: monitoring)
+
+  Dev->>DC: up -d  (no profiles)
+  DC->>SQL: start
+  Note over SQL: healthcheck (sqlcmd SELECT 1)\ninterval=30s, retries=5
+
+  rect rgb(245,245,245)
+  Dev->>DC: up -d --profile migration
+  DC->>FLY: start (depends_on: SQL healthy)
+  FLY->>SQL: JDBC migrate/info (baselineOnMigrate=true)
+  end
+
+  rect rgb(245,245,235)
+  Dev->>DC: up -d --profile cache
+  DC->>RED: start
+  end
+
+  rect rgb(255,248,232)
+  Dev->>DC: up -d --profile monitoring
+  DC->>EXP: start (needs SQL reachable)
+  DC->>PRO: start (prometheus.yml mounted)
+  DC->>GRA: start (provisioning mounted)
+  EXP-->>PRO: /metrics
+  PRO-->>GRA: Prometheus datasource
+  end
+
+  Note over GRA: Login admin/admin123 (env)\nUI on :3000
+  Note over PRO: Prometheus UI on :9090
